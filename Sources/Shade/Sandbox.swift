@@ -22,8 +22,8 @@ struct SandboxConfig: Equatable {
     let level: SandboxLevel
     /// The only folder outside temp and caches the shell may change.
     let root: URL
-    /// Route the card's HTTP(S) traffic through the local inspector (see TrafficInspector).
-    var inspectTraffic = false
+    /// Send the card's model API calls through Shade's Agent Traffic relay, which records them.
+    var recordTraffic = false
 }
 
 enum Sandbox {
@@ -128,13 +128,7 @@ enum Sandbox {
         ]
         lines += protectedHomeFolders.map { "    (subpath \(homePath($0)))" }
         lines += protectedHomeFiles.map { "    (literal \(homePath($0)))" }
-        lines += [
-            ")",
-            "",
-            "; The traffic inspector's private key: only its public certificate can be read.",
-            "(deny file-read* file-write* (subpath \(homePath(".mitmproxy"))))",
-            "(allow file-read* (literal \(homePath(".mitmproxy/mitmproxy-ca-cert.pem"))))",
-        ]
+        lines.append(")")
 
         if config.level == .strict {
             lines += [
