@@ -39,6 +39,8 @@ struct WelcomeView: View {
         ("character.bubble", "Translate: shows a translation next to your text, on-device with Apple Translation."),
         ("apple.terminal", "Terminal cards run your shell inside the panel. Their tab shows the title the running "
             + "program sets, such as Claude Code or Copilot CLI status, and a dot when there's new output."),
+        ("lock.shield", "Sandboxed terminals (🛡 next to +): an agent can change only the project folder you pick, "
+            + "and can't read your keys or credentials."),
         ("arrow.triangle.branch", "In a git repository, a terminal card shows the branch and changes. Pin the "
             + "sidebar (⌘B) left or right to browse changes and files. Edit files in place (⌘S saves) or view their "
             + "diff, and open them in your editor with one click."),

@@ -45,11 +45,22 @@ final class TerminalSessions: ObservableObject {
         sessions.values.forEach { $0.apply(theme, backgroundOpacity: backgroundOpacity) }
     }
 
-    func view(for cardID: UUID) -> ActivityTerminalView {
+    /// Commands to type into a card's shell once it starts (e.g. the sandbox log).
+    private var pendingCommands: [UUID: String] = [:]
+
+    /// The card's terminal; its shell starts on first use, inside `sandbox` when given.
+    func view(for cardID: UUID, sandbox: SandboxConfig? = nil) -> ActivityTerminalView {
         if let session = sessions[cardID] { return session.view }
-        let session = TerminalSession(cardID: cardID, owner: self)
+        let session = TerminalSession(
+            cardID: cardID, owner: self, sandbox: sandbox,
+            initialCommand: pendingCommands.removeValue(forKey: cardID))
         sessions[cardID] = session
         return session.view
+    }
+
+    /// Runs `command` in the card's shell as soon as the card is first shown.
+    func run(_ command: String, whenStarting cardID: UUID) {
+        pendingCommands[cardID] = command
     }
 
     /// Name of the program running in the foreground of a card's shell (e.g. "claude", "npm"),
@@ -112,11 +123,14 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
     let cardID: UUID
     weak var owner: TerminalSessions?
     let view = ActivityTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 300))
+    private let sandbox: SandboxConfig?
     private var isClosed = false
+    private var startedAt = Date()
 
-    init(cardID: UUID, owner: TerminalSessions) {
+    init(cardID: UUID, owner: TerminalSessions, sandbox: SandboxConfig?, initialCommand: String?) {
         self.cardID = cardID
         self.owner = owner
+        self.sandbox = sandbox
         super.init()
         view.processDelegate = self
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -128,6 +142,10 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
             self.owner?.outputArrived(self.cardID)
         }
         startShell()
+        if let initialCommand {
+            // The shell reads it from the terminal once its startup files have run.
+            view.send(data: ArraySlice(Array((initialCommand + "\n").utf8)))
+        }
     }
 
     func apply(_ theme: Theme, backgroundOpacity: Double) {
@@ -147,12 +165,40 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
         environment["LANG"] = environment["LANG"] ?? "en_US.UTF-8"
-        // A leading "-" in argv[0] starts a login shell, which loads the user's profile like Terminal.app does.
+        startedAt = Date()
+
+        guard let sandbox else {
+            // A leading "-" in argv[0] starts a login shell, which loads the user's profile like Terminal.app does.
+            view.startProcess(
+                executable: shell,
+                environment: environment.map { "\($0.key)=\($0.value)" },
+                execName: "-" + (shell as NSString).lastPathComponent,
+                currentDirectory: NSHomeDirectory()
+            )
+            return
+        }
+
+        // Sandboxed: never fall back to an unsandboxed shell.
+        guard Sandbox.isAvailable else {
+            view.feed(text: "Shade: \(Sandbox.executable) isn't available, so the sandboxed shell was not started.\r\n")
+            return
+        }
+        let profile: URL
+        do {
+            profile = try Sandbox.writeProfile(for: sandbox, cardID: cardID)
+        } catch {
+            view.feed(text: "Shade: couldn't write the sandbox profile (\(error.localizedDescription)), "
+                + "so the shell was not started.\r\n")
+            return
+        }
+        environment["SHADE_SANDBOX"] = sandbox.level.rawValue
+        view.feed(text: "Shade: sandboxed shell (\(sandbox.level.name)). Writes are limited to "
+            + "\(sandbox.root.path), temp and tool caches; keys and credentials can't be read.\r\n")
         view.startProcess(
-            executable: shell,
+            executable: Sandbox.executable,
+            args: ["-f", profile.path, shell, "-l"],
             environment: environment.map { "\($0.key)=\($0.value)" },
-            execName: "-" + (shell as NSString).lastPathComponent,
-            currentDirectory: NSHomeDirectory()
+            currentDirectory: sandbox.root.path
         )
     }
 
@@ -172,6 +218,12 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         DispatchQueue.main.async { [self] in
             MainActor.assumeIsolated {
                 guard !self.isClosed else { return }
+                // A shell that dies right away (e.g. a sandbox profile macOS rejects) would restart forever.
+                guard Date().timeIntervalSince(self.startedAt) > 2 else {
+                    self.view.feed(text: "\r\n[The shell exited right after starting, so Shade didn't restart it. "
+                        + "Close this card and open a new one.]\r\n")
+                    return
+                }
                 self.view.feed(text: "\r\n[Shell exited. Starting a new one…]\r\n")
                 self.startShell()
             }
@@ -182,9 +234,10 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
 struct TerminalPane: NSViewRepresentable {
     let sessions: TerminalSessions
     let cardID: UUID
+    let sandbox: SandboxConfig?
 
     func makeNSView(context: Context) -> ActivityTerminalView {
-        let view = sessions.view(for: cardID)
+        let view = sessions.view(for: cardID, sandbox: sandbox)
         // Type straight into the shell when the card is shown.
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         return view

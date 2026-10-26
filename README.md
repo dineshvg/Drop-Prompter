@@ -62,6 +62,24 @@ other command in a terminal card without switching windows.
 - Closing a card or quitting the app asks first and names what would be stopped, for example
   *"Close terminal while “claude” is running?"*
 
+### Sandboxed terminals for agents
+Run Claude Code, Copilot CLI or any other tool in a **sandboxed terminal card** (the 🛡 button next to **+**). You
+pick the project folder; everything started in that card, the agent and every command it runs, is confined by
+macOS's built-in sandbox:
+- **Project Only**: it can change files only in that folder, temp and tool caches (Gradle, npm, Kotlin/Native…) and
+  the agents' own settings. Everything else on your Mac is read-only.
+- **Keys and credentials are off limits**: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, gcloud and GitHub
+  CLI tokens, `.netrc`, `.npmrc`, `~/.gradle/gradle.properties` and similar can't be read at all.
+- **Strict (No Network)**: the same, plus no network except to your own Mac, for reviewing code without anything
+  leaving it. (An agent that needs its cloud API won't work in this mode.)
+- The tab shows a green shield, and **Blocked Actions** opens a live log of everything the sandbox denied.
+
+Good to know: the sandbox is fixed when the card starts, so `cd`-ing elsewhere doesn't widen it. Things it blocks
+on purpose: `git push` over SSH, installing with Homebrew, and builds that need secrets from
+`~/.gradle/gradle.properties`; run those in a normal terminal card. It uses `sandbox-exec`, which Apple marks as
+deprecated but still ships and which tools like Chrome and coding agents rely on. It's a strong safety net, not a
+guarantee.
+
 ### See what your agent changed
 When a terminal card's shell is inside a git repository, Shade notices and shows a slim repo bar: the
 branch and how many files changed, updated as commands run. It's built for watching Claude Code or Copilot CLI
@@ -170,6 +188,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `AppDelegate.swift` | Panel, menu bar item, show/hide animation, shortcut, resizing |
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
+| `Sandbox.swift` | Sandbox profiles for sandboxed terminal cards |
 | `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |
 | `FileBuffers.swift` | Editing, saving and conflict handling for file cards |
 | `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |

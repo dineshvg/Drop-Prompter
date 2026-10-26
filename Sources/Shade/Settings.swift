@@ -139,8 +139,16 @@ final class Settings: ObservableObject {
         /// Highlighting language chosen for a file card: nil detects it from the file name,
         /// `Card.plainText` turns highlighting off.
         var language: String?
+        /// Set for sandboxed terminal cards, with the folder they may change.
+        var sandbox: SandboxLevel?
+        var sandboxRoot: String?
 
         static let plainText = "plaintext"
+
+        var sandboxConfig: SandboxConfig? {
+            guard kind == .terminal, let sandbox, let sandboxRoot else { return nil }
+            return SandboxConfig(level: sandbox, root: URL(fileURLWithPath: sandboxRoot, isDirectory: true))
+        }
 
         init(kind: Kind = .notes, text: String = "", filePath: String? = nil, repoRoot: String? = nil) {
             self.kind = kind
@@ -160,6 +168,8 @@ final class Settings: ObservableObject {
             repoRoot = try container.decodeIfPresent(String.self, forKey: .repoRoot)
             groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
             language = try container.decodeIfPresent(String.self, forKey: .language)
+            sandbox = try container.decodeIfPresent(SandboxLevel.self, forKey: .sandbox)
+            sandboxRoot = try container.decodeIfPresent(String.self, forKey: .sandboxRoot)
         }
 
         /// Tab label: the user's name if set; otherwise the running program's title for terminals,
@@ -197,12 +207,17 @@ final class Settings: ObservableObject {
     }
 
     /// New cards join the current card's group, like a tab opened from a grouped tab in Chrome.
-    func addCard(kind: Card.Kind = .notes) {
+    @discardableResult
+    func addCard(kind: Card.Kind = .notes, name: String? = nil, sandbox: SandboxConfig? = nil) -> UUID {
         var card = Card(kind: kind)
+        card.name = name
+        card.sandbox = sandbox?.level
+        card.sandboxRoot = sandbox?.root.path
         card.groupID = currentCard.groupID
         cards.append(card)
         keepGroupsTogether()
         selectedCardID = card.id
+        return card.id
     }
 
     /// Shows a file in a viewer card, reusing the card if the file is already open.

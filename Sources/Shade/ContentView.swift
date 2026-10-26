@@ -221,16 +221,61 @@ struct ContentView: View {
     private var terminalArea: some View {
         let cardID = settings.selectedCardID
         let repo = terminals.repos[cardID]
+        let sandbox = settings.currentCard.sandboxConfig
         return VStack(spacing: 0) {
+            if let sandbox {
+                sandboxBar(sandbox)
+                Divider().opacity(0.4)
+            }
             if let repo {
                 repoBar(repo)
                 Divider().opacity(0.4)
             }
-            TerminalPane(sessions: terminals, cardID: cardID)
+            TerminalPane(sessions: terminals, cardID: cardID, sandbox: sandbox)
                 .id(cardID)
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
         }
+    }
+
+    /// Shown above a sandboxed terminal card: what it may do, and where to see what was blocked.
+    private func sandboxBar(_ sandbox: SandboxConfig) -> some View {
+        HStack(spacing: 10) {
+            Label("Sandboxed · \(sandbox.level.name)", systemImage: "lock.shield.fill")
+                .foregroundStyle(.green)
+            Text("may change only \(sandbox.root.lastPathComponent)")
+                .foregroundStyle(.secondary)
+                .help(sandbox.root.path)
+            Spacer()
+            Button { showBlockedActions() } label: { Label("Blocked Actions", systemImage: "list.bullet.rectangle") }
+                .help("Open a terminal card that lists what the sandbox denies, live")
+        }
+        .buttonStyle(.borderless)
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+    }
+
+    /// Asks for the folder the agent may change, then opens a sandboxed terminal card in it.
+    private func newSandboxedTerminal(_ level: SandboxLevel) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Sandbox This Folder"
+        panel.message = "Choose the project folder the terminal may change. Everything else stays read-only, "
+            + "and keys and credentials can't be read."
+        panel.directoryURL = activeRepoRoot ?? URL(fileURLWithPath: NSHomeDirectory())
+        // Shade's panel floats above normal windows; keep the folder picker above it.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        settings.addCard(kind: .terminal, sandbox: SandboxConfig(level: level, root: folder))
+    }
+
+    private func showBlockedActions() {
+        let cardID = settings.addCard(kind: .terminal, name: "Sandbox Log")
+        terminals.run(Sandbox.blockedActionsCommand, whenStarting: cardID)
     }
 
     /// Shown above a terminal card whose shell is inside a git repository.
@@ -371,6 +416,18 @@ struct ContentView: View {
                     .buttonStyle(.borderless)
                     .keyboardShortcut("t", modifiers: [.command, .shift])
                     .help("New terminal card (⇧⌘T)")
+                Menu {
+                    ForEach(SandboxLevel.allCases) { level in
+                        Button(level.name) { newSandboxedTerminal(level) }
+                    }
+                } label: {
+                    Image(systemName: "lock.shield")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(!Sandbox.isAvailable)
+                .help("New sandboxed terminal card: an agent in it can only change the project folder")
             }
         }
         .alert(
@@ -388,7 +445,11 @@ struct ContentView: View {
     private func cardChip(_ card: Settings.Card, index: Int) -> some View {
         let isSelected = card.id == settings.selectedCardID
         return HStack(spacing: 6) {
-            if card.kind != .notes {
+            if card.sandbox != nil {
+                Image(systemName: "lock.shield.fill").font(.system(size: 10))
+                    .foregroundStyle(.green)
+                    .help("Sandboxed: \(card.sandbox?.name ?? ""), may change only \(card.sandboxRoot ?? "")")
+            } else if card.kind != .notes {
                 Image(systemName: card.kind == .terminal ? "apple.terminal" : "doc.text").font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
