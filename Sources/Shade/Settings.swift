@@ -27,7 +27,7 @@ final class Settings: ObservableObject {
     @Published var syntaxHighlighting: Bool { didSet { save(syntaxHighlighting, "syntaxHighlighting") } }
     /// Opacity of the solid background behind code and terminals, separate from the see-through panel.
     @Published var codeBackgroundOpacity: Double { didSet { save(codeBackgroundOpacity, "codeBackgroundOpacity") } }
-    static let codeBackgroundRange = 0.5...1.0
+    static let codeBackgroundRange = 0.3...1.0
     /// Highlighting theme chosen for each Shade theme, by Shade theme raw value.
     @Published var highlightThemes: [String: String] { didSet { save(highlightThemes, "highlightThemes") } }
     /// Repository sidebar: pinned open or not, and on which side.
@@ -70,7 +70,7 @@ final class Settings: ObservableObject {
         theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
         editorBundleID = d.string(forKey: "editorBundleID") ?? ""
         syntaxHighlighting = d.object(forKey: "syntaxHighlighting") as? Bool ?? true
-        codeBackgroundOpacity = d.object(forKey: "codeBackgroundOpacity") as? Double ?? 0.92
+        codeBackgroundOpacity = d.object(forKey: "codeBackgroundOpacity") as? Double ?? 0.75
         highlightThemes = d.dictionary(forKey: "highlightThemes") as? [String: String] ?? [:]
         showSidebar = d.bool(forKey: "showSidebar")
         sidebarOnRight = d.bool(forKey: "sidebarOnRight")

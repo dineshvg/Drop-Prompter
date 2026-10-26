@@ -37,7 +37,7 @@ final class TerminalSessions: ObservableObject {
     private var sessions: [UUID: TerminalSession] = [:]
     private var repoRefreshes: [UUID: Task<Void, Never>] = [:]
     private(set) var theme: Theme = .dark
-    private(set) var backgroundOpacity: Double = 0.92
+    private(set) var backgroundOpacity: Double = 0.75
 
     func apply(_ theme: Theme, backgroundOpacity: Double) {
         self.theme = theme
