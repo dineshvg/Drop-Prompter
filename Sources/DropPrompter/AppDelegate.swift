@@ -47,6 +47,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.panel.setFrame(self.frames(on: screen).shown, display: true)
             }
             .store(in: &subscriptions)
+
+        // Show the panel once at launch, so starting the app from Applications or Spotlight visibly does something.
+        show()
+    }
+
+    /// Opening the app again (Finder, Spotlight, Dock) while it's running brings the panel down.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        show()
+        return false
     }
 
     // MARK: - Setup

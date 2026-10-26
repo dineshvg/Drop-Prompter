@@ -24,13 +24,15 @@ optionally show an on-device translation side by side.
 ## Build and run (macOS 15+, Xcode 16+ or matching Command Line Tools)
 
 ```bash
-./scripts/bundle.sh
-open build/DropPrompter.app
+./scripts/install.sh   # builds, copies to /Applications and starts it
 ```
+
+After that, start it like any other app (Spotlight, Launchpad, Finder). Opening it while it's already running
+brings the panel down. To only build without installing: `./scripts/bundle.sh` (output in `build/`).
 
 For development: `swift run` (or `open Package.swift` in Xcode).
 
-To start it at login: System Settings → General → Login Items → **+** → `build/DropPrompter.app`.
+To start it at login: System Settings → General → Login Items → **+** → `/Applications/DropPrompter.app`.
 
 ## Translation languages
 
