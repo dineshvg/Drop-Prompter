@@ -30,7 +30,8 @@ the project you give it.
 - **More than notes.** Terminal cards run your shell right in the panel. Each card's tab shows the live status
   that tools like Claude Code and Copilot CLI write to the terminal title.
 - **Let agents work, safely.** Sandboxed terminal cards keep an agent inside its project folder and away from your
-  keys and credentials, while the sidebar shows every change it makes as it happens.
+  keys and credentials, while the sidebar shows every change it makes as it happens, and Agent Traffic shows
+  what it sends over the network.
 - **Native, small and private.** Swift, SwiftUI and AppKit, no Electron. No account, no analytics, no
   telemetry. Everything stays on your Mac.
 
@@ -268,6 +269,17 @@ Languages.
 denied. Expected ones are `git push` over SSH, `brew install`, and builds that read secrets from
 `~/.gradle/gradle.properties`; run those in a normal terminal card. If something harmless is blocked, open an
 issue with the denied path.
+
+**A program hangs or can't connect in a Strict card.** Strict has no network unless **Record Agent Traffic** was on
+when the card opened, and even then only agent services are reachable. Open **Agent Traffic** and choose **All**:
+refused connections show as **BLOCKED**. If the host belongs to your agent, add it in ⚙︎ › **Agent Traffic** and
+open a new card.
+
+**A tool's calls don't show up in Agent Traffic.** It ignores the `HTTPS_PROXY` setting and connects directly, so
+Shade can't see it. Most command-line tools follow it; some need their own proxy setting.
+
+**Shade stops responding.** Force-quit it from the Apple menu › **Force Quit** (⌥⌘⎋) or by right-clicking its Dock
+icon with ⌥ held. This needs ⚙︎ › **Show in Dock**, which is on by default.
 
 **Terminal cards after a restart.** The cards come back, each with a fresh shell; running programs don't survive
 quitting the app.

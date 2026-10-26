@@ -42,7 +42,7 @@ struct WelcomeView: View {
         ("lock.shield", "Sandboxed terminals (🛡 next to +): an agent can change only the project folder you pick, "
             + "and can't read your keys or credentials."),
         ("arrow.left.arrow.right", "Record Agent Traffic (in the 🛡 menu) shows what an agent sends to its model and "
-            + "what comes back, in an Agent Traffic card. Nothing to install."),
+            + "what comes back, and every connection a terminal card makes, in an Agent Traffic card. Nothing to install."),
         ("arrow.triangle.branch", "In a git repository, a terminal card shows the branch and changes. Pin the "
             + "sidebar (⌘B) left or right to browse changes and files. Edit files in place (⌘S saves) or view their "
             + "diff, and open them in your editor with one click."),
