@@ -92,7 +92,8 @@ made from that card, prompts, the code and command output sent to the model and 
 [mitmproxy](https://mitmproxy.org)'s web interface: click **Open Inspector** in the card's bar or **Open Traffic
 Inspector** in the menu bar icon, then click a request (for example `api.anthropic.com/v1/messages`) and read its
 *Request* and *Response* tabs. The setting applies to cards opened after you turn it on.
-- Install mitmproxy once: `pipx install mitmproxy` (or `uv tool install mitmproxy`, or `brew install mitmproxy`).
+- Install mitmproxy once: ⚙︎ › Traffic Inspector › **Install mitmproxy…** runs the install in a terminal card, or run
+  `pipx install mitmproxy` (or `uv tool install mitmproxy`, or `brew install mitmproxy`) yourself.
   If Homebrew's download fails with a 403, your network may block mitmproxy's download server; the Python package
   comes from PyPI instead. Shade starts and stops it for you (ports 18080 and 18081). On a work Mac, check your
   company's policy first: mitmproxy is an HTTPS interception tool.
