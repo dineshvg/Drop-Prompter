@@ -189,7 +189,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 
 ## License
 
-Open source under the [MIT License](LICENSE). Copyright (c) 2026 dineshvg. Third-party components and their
+Open source under the [MIT License](LICENSE). Copyright (c) 2026 Dinesh Gangatharan. Third-party components and their
 licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 You are free to use, copy, modify, merge, publish, distribute, sublicense and sell this software, in private
