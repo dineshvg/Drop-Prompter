@@ -44,6 +44,8 @@ final class Settings: ObservableObject {
     @Published var targetLanguage: String { didSet { save(targetLanguage, "targetLanguage") } }
     @Published var showTranslation: Bool { didSet { save(showTranslation, "showTranslation") } }
     @Published var hideFromScreenShare: Bool { didSet { save(hideFromScreenShare, "hideFromScreenShare") } }
+    /// A Dock icon also lists Shade in Force Quit (⌥⌘⎋), which only shows apps that have one.
+    @Published var showInDock: Bool { didSet { save(showInDock, "showInDock") } }
     @Published var hotKeyID: String { didSet { save(hotKeyID, "hotKeyID") } }
     /// Set by the app delegate after registering the shortcut; nil when nothing is in the way.
     @Published var hotKeyProblem: String? = nil
@@ -84,6 +86,7 @@ final class Settings: ObservableObject {
         targetLanguage = d.string(forKey: "targetLanguage") ?? "de"
         showTranslation = d.object(forKey: "showTranslation") as? Bool ?? false
         hideFromScreenShare = d.object(forKey: "hideFromScreenShare") as? Bool ?? true
+        showInDock = d.object(forKey: "showInDock") as? Bool ?? true
         showWelcome = !d.bool(forKey: "hasSeenWelcome")
         hotKeyID = d.string(forKey: "hotKeyID") ?? HotKeyPreset.all[0].id
         dismissedHotKeyWarning = d.string(forKey: "dismissedHotKeyWarning") ?? ""

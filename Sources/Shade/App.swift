@@ -7,7 +7,8 @@ enum ShadeApp {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
+        // Menu bar only unless "Show in Dock" is on; the app delegate follows later changes.
+        app.setActivationPolicy(Settings.shared.showInDock ? .regular : .accessory)
         withExtendedLifetime(delegate) { app.run() }
     }
 }

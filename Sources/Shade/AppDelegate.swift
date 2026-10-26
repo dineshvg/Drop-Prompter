@@ -50,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.$hideFromScreenShare
             .sink { [weak self] in self?.panel.sharingType = $0 ? .none : .readOnly }
             .store(in: &subscriptions)
+        settings.$showInDock
+            .dropFirst()
+            .sink { NSApp.setActivationPolicy($0 ? .regular : .accessory) }
+            .store(in: &subscriptions)
         // @Published emits before the value is stored, so hop to the next run loop turn before re-reading it.
         settings.$widthFraction.combineLatest(settings.$heightFraction)
             .dropFirst()
@@ -112,6 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = "Quitting " + consequences.joined(separator: " and ") + "."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
+        // Shade's panel floats above normal windows; an alert behind it would block the app unseen.
+        alert.layout()
+        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }

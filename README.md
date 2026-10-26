@@ -138,6 +138,8 @@ work without switching to your IDE.
 - **Hide from screen sharing** (on by default) keeps the panel out of most screen shares and recordings. It's
   best effort; see [Tips](#tips-and-troubleshooting).
 - **Launch at login**, quietly in the menu bar until you need it.
+- **Show in Dock** (on by default) gives Shade a Dock icon, which also lists it in Force Quit (⌥⌘⎋) in case it
+  ever stops responding. Turn it off to keep Shade in the menu bar only.
 - A short **welcome screen** explains the basics on first launch; open it again any time with **?**. The **ⓘ**
   button shows the version and where to find the project.
 
