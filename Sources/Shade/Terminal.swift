@@ -37,10 +37,12 @@ final class TerminalSessions: ObservableObject {
     private var sessions: [UUID: TerminalSession] = [:]
     private var repoRefreshes: [UUID: Task<Void, Never>] = [:]
     private(set) var theme: Theme = .dark
+    private(set) var backgroundOpacity: Double = 0.92
 
-    func apply(_ theme: Theme) {
+    func apply(_ theme: Theme, backgroundOpacity: Double) {
         self.theme = theme
-        sessions.values.forEach { $0.apply(theme) }
+        self.backgroundOpacity = backgroundOpacity
+        sessions.values.forEach { $0.apply(theme, backgroundOpacity: backgroundOpacity) }
     }
 
     func view(for cardID: UUID) -> ActivityTerminalView {
@@ -118,7 +120,7 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         super.init()
         view.processDelegate = self
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        apply(owner.theme)
+        apply(owner.theme, backgroundOpacity: owner.backgroundOpacity)
         // Keep ⌥ for typing characters such as @ { } [ ] on German and other layouts.
         view.optionAsMetaKey = false
         view.onOutput = { [weak self] in
@@ -128,10 +130,10 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         startShell()
     }
 
-    func apply(_ theme: Theme) {
+    func apply(_ theme: Theme, backgroundOpacity: Double) {
         view.nativeForegroundColor = theme.terminalForeground
         view.nativeBackgroundColor = theme.terminalBackground
-        view.backgroundOpacity = theme.terminalBackgroundOpacity
+        view.backgroundOpacity = CGFloat(backgroundOpacity)
     }
 
     func close() {

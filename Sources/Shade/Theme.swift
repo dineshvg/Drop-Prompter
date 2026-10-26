@@ -58,10 +58,6 @@ enum Theme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Opacity of the terminal's own background on top of the panel's.
-    var terminalBackgroundOpacity: CGFloat {
-        self == .dark ? 0.35 : 0.5
-    }
 }
 
 extension Settings.GroupColor {

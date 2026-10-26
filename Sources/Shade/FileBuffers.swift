@@ -115,6 +115,8 @@ struct CodeEditorView: NSViewRepresentable {
     let text: String
     let font: NSFont
     let color: NSColor
+    /// Solid background behind the code, so it stays readable whatever is behind the panel.
+    let background: NSColor
     /// Nil shows plain text.
     let highlighting: Highlighting?
     let onChange: (String) -> Void
@@ -174,10 +176,15 @@ struct CodeEditorView: NSViewRepresentable {
     /// Applies font, color, theme and language, but only when one of them changed: re-highlighting a whole
     /// file on every SwiftUI update would be slow.
     private func applyAppearance(to textView: NSTextView, coordinator: Coordinator) {
-        let appearance = Coordinator.Appearance(highlighting: highlighting, fontSize: font.pointSize, color: color)
+        let appearance = Coordinator.Appearance(
+            highlighting: highlighting, fontSize: font.pointSize, color: color, background: background)
         guard coordinator.appearance != appearance else { return }
         coordinator.appearance = appearance
 
+        if let scrollView = textView.enclosingScrollView {
+            scrollView.drawsBackground = true
+            scrollView.backgroundColor = background
+        }
         textView.insertionPointColor = color
         textView.typingAttributes = [.font: font, .foregroundColor: color]
         if let highlighting, let storage = coordinator.storage,
@@ -196,6 +203,7 @@ struct CodeEditorView: NSViewRepresentable {
             let highlighting: Highlighting?
             let fontSize: CGFloat
             let color: NSColor
+            let background: NSColor
         }
 
         var onChange: (String) -> Void

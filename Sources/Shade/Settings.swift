@@ -25,6 +25,9 @@ final class Settings: ObservableObject {
     /// Bundle ID of the editor for "Open in…"; empty means the macOS default app.
     @Published var editorBundleID: String { didSet { save(editorBundleID, "editorBundleID") } }
     @Published var syntaxHighlighting: Bool { didSet { save(syntaxHighlighting, "syntaxHighlighting") } }
+    /// Opacity of the solid background behind code and terminals, separate from the see-through panel.
+    @Published var codeBackgroundOpacity: Double { didSet { save(codeBackgroundOpacity, "codeBackgroundOpacity") } }
+    static let codeBackgroundRange = 0.5...1.0
     /// Highlighting theme chosen for each Shade theme, by Shade theme raw value.
     @Published var highlightThemes: [String: String] { didSet { save(highlightThemes, "highlightThemes") } }
     /// Repository sidebar: pinned open or not, and on which side.
@@ -67,6 +70,7 @@ final class Settings: ObservableObject {
         theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
         editorBundleID = d.string(forKey: "editorBundleID") ?? ""
         syntaxHighlighting = d.object(forKey: "syntaxHighlighting") as? Bool ?? true
+        codeBackgroundOpacity = d.object(forKey: "codeBackgroundOpacity") as? Double ?? 0.92
         highlightThemes = d.dictionary(forKey: "highlightThemes") as? [String: String] ?? [:]
         showSidebar = d.bool(forKey: "showSidebar")
         sidebarOnRight = d.bool(forKey: "sidebarOnRight")

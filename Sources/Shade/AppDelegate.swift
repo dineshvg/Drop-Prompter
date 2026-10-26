@@ -42,8 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in self?.registerHotKey() }
             .store(in: &subscriptions)
 
-        settings.$theme.combineLatest(settings.$opacity)
-            .sink { [weak self] theme, opacity in self?.apply(theme, opacity: opacity) }
+        settings.$theme.combineLatest(settings.$opacity, settings.$codeBackgroundOpacity)
+            .sink { [weak self] theme, opacity, codeOpacity in
+                self?.apply(theme, opacity: opacity, codeBackgroundOpacity: codeOpacity)
+            }
             .store(in: &subscriptions)
         settings.$hideFromScreenShare
             .sink { [weak self] in self?.panel.sharingType = $0 ? .none : .readOnly }
@@ -175,13 +177,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Colors the whole panel. Opacity applies to the blur and tint only, so text stays fully readable.
-    private func apply(_ theme: Theme, opacity: Double) {
+    private func apply(_ theme: Theme, opacity: Double, codeBackgroundOpacity: Double) {
         panel.appearance = theme.appearance
         background.material = theme.material
         background.alphaValue = opacity
         tintView.layer?.backgroundColor = theme.tint?.cgColor
         tintView.alphaValue = opacity
-        TerminalSessions.shared.apply(theme)
+        TerminalSessions.shared.apply(theme, backgroundOpacity: codeBackgroundOpacity)
     }
 
     /// Hidden main menu so ⌘C/⌘V/⌘Z also work in the settings popover.

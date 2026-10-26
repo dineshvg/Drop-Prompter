@@ -190,57 +190,57 @@ open class Highlightr
         }
     }
     
+    /// Shade: rewritten with the non-deprecated Scanner API (scanUpToString, currentIndex).
     private func processHTMLString(_ string: String) -> NSAttributedString?
     {
         let scanner = Scanner(string: string)
         scanner.charactersToBeSkipped = nil
-        var scannedString: NSString?
+        let source = scanner.string
         let resultString = NSMutableAttributedString(string: "")
         var propStack = ["hljs"]
-        
+
+        func advance(by count: Int)
+        {
+            scanner.currentIndex = source.index(scanner.currentIndex, offsetBy: count, limitedBy: source.endIndex)
+                ?? source.endIndex
+        }
+
         while !scanner.isAtEnd
         {
-            var ended = false
-            if scanner.scanUpTo(htmlStart, into: &scannedString)
+            let scannedString = scanner.scanUpToString(htmlStart)
+            if let scannedString, !scannedString.isEmpty
             {
+                resultString.append(theme.applyStyleToString(scannedString, styleList: propStack))
                 if scanner.isAtEnd
-                {
-                    ended = true
-                }
-            }
-            
-            if scannedString != nil && scannedString!.length > 0 {
-                let attrScannedString = theme.applyStyleToString(scannedString! as String, styleList: propStack)
-                resultString.append(attrScannedString)
-                if ended
                 {
                     continue
                 }
             }
-            
-            scanner.scanLocation += 1
-            
-            let string = scanner.string as NSString
-            let nextChar = string.substring(with: NSMakeRange(scanner.scanLocation, 1))
-            if(nextChar == "s")
+
+            advance(by: 1) // past "<"
+            guard !scanner.isAtEnd else { break }
+
+            let nextChar = source[scanner.currentIndex]
+            if nextChar == "s"
             {
-                scanner.scanLocation += (spanStart as NSString).length
-                scanner.scanUpTo(spanStartClose, into:&scannedString)
-                scanner.scanLocation += (spanStartClose as NSString).length
-                propStack.append(scannedString! as String)
+                advance(by: spanStart.count)
+                let className = scanner.scanUpToString(spanStartClose) ?? ""
+                advance(by: spanStartClose.count)
+                propStack.append(className)
             }
-            else if(nextChar == "/")
+            else if nextChar == "/"
             {
-                scanner.scanLocation += (spanEnd as NSString).length
-                propStack.removeLast()
-            }else
-            {
-                let attrScannedString = theme.applyStyleToString("<", styleList: propStack)
-                resultString.append(attrScannedString)
-                scanner.scanLocation += 1
+                advance(by: spanEnd.count)
+                if propStack.count > 1
+                {
+                    propStack.removeLast()
+                }
             }
-            
-            scannedString = nil
+            else
+            {
+                // A literal "<" (highlight.js normally escapes these). Upstream also skipped the next character.
+                resultString.append(theme.applyStyleToString("<", styleList: propStack))
+            }
         }
         
         let results = htmlEscape.matches(in: resultString.string,

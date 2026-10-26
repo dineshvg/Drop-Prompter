@@ -23,6 +23,8 @@ final class SyntaxHighlighting: ObservableObject {
     @Published var downloadError: String?
 
     private var bundledThemes: Set<String> = []
+    private var themeDirectories: [URL] = []
+    private var backgrounds: [String: NSColor] = [:]
 
     private init() {
         let fileManager = FileManager.default
@@ -31,12 +33,13 @@ final class SyntaxHighlighting: ObservableObject {
         guard let bundled = Self.bundledDirectory else { return }
 
         let bundledThemesDirectory = bundled.appendingPathComponent("themes")
+        themeDirectories = [bundledThemesDirectory, Self.userThemesDirectory]
         let languageFiles = ((try? fileManager.contentsOfDirectory(
             at: Self.userLanguagesDirectory, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension == "js" }
         highlightr = Highlightr(
             highlightPath: bundled.appendingPathComponent("highlight.min.js").path,
-            themeDirectories: [bundledThemesDirectory, Self.userThemesDirectory],
+            themeDirectories: themeDirectories,
             languageFiles: languageFiles
         )
         highlightr?.ignoreIllegals = true
@@ -80,6 +83,21 @@ final class SyntaxHighlighting: ObservableObject {
 
     func isBundled(_ theme: String) -> Bool { bundledThemes.contains(theme) }
 
+    /// The background a theme is designed for. Code is drawn on it, because highlighting colors are only
+    /// readable on their own background, not on the see-through panel.
+    func background(ofTheme name: String) -> NSColor? {
+        if let cached = backgrounds[name] { return cached }
+        let candidates = themeDirectories.reversed().flatMap { directory in
+            [directory.appendingPathComponent(name + ".min.css"), directory.appendingPathComponent(name + ".css")]
+        }
+        guard let file = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+              let css = try? String(contentsOf: file, encoding: .utf8)
+        else { return nil }
+        let color = HighlightTheme(themeString: css).themeBackgroundColor
+        backgrounds[name] = color
+        return color
+    }
+
     /// Sets the theme and code font used for highlighting. Returns false if the theme isn't installed.
     @discardableResult
     func use(theme name: String, font: NSFont) -> Bool {
@@ -102,6 +120,7 @@ final class SyntaxHighlighting: ObservableObject {
             else { continue }
             do {
                 try result.0.write(to: Self.userThemesDirectory.appendingPathComponent("\(name).min.css"))
+                backgrounds[name] = nil
                 reloadInstalledThemes()
             } catch {
                 downloadError = "Couldn't save “\(name)”: \(error.localizedDescription)"
@@ -117,6 +136,7 @@ final class SyntaxHighlighting: ObservableObject {
         for file in ["\(name).min.css", "\(name).css"] {
             try? FileManager.default.removeItem(at: Self.userThemesDirectory.appendingPathComponent(file))
         }
+        backgrounds[name] = nil
         reloadInstalledThemes()
     }
 

@@ -165,6 +165,7 @@ struct ContentView: View {
                     languageOverride: card.language,
                     highlightingEnabled: settings.syntaxHighlighting,
                     highlightTheme: settings.highlightTheme(for: settings.theme),
+                    codeBackgroundOpacity: settings.codeBackgroundOpacity,
                     onSetLanguage: { settings.setLanguage($0, of: card.id) },
                     buffers: buffers
                 )
@@ -753,6 +754,13 @@ struct SettingsPopover: View {
                     ForEach(Theme.allCases) { Text($0.name).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Slider(value: $settings.codeBackgroundOpacity, in: Settings.codeBackgroundRange) {
+                    Text("Code and terminal background")
+                }
+                Text("Code and terminals get a solid background so they stay readable over any window. "
+                    + "The panel's own see-through look is set with the slider in the toolbar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("Code") {
                 Picker("Open files and repositories in", selection: $settings.editorBundleID) {

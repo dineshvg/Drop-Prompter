@@ -7,6 +7,8 @@ import SwiftUI
 /// better than SwiftUI's Text.
 struct ReadOnlyText: NSViewRepresentable {
     let text: NSAttributedString
+    /// Solid background, so colored code stays readable on the see-through panel.
+    let background: NSColor
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -27,6 +29,8 @@ struct ReadOnlyText: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = background
         guard let textView = scrollView.documentView as? NSTextView,
               textView.textStorage?.isEqual(to: text) != true
         else { return }
@@ -368,6 +372,7 @@ struct FileViewer: View {
     let languageOverride: String?
     let highlightingEnabled: Bool
     let highlightTheme: String
+    let codeBackgroundOpacity: Double
     let onSetLanguage: (String?) -> Void
     @ObservedObject var buffers: FileBuffers
 
@@ -389,6 +394,13 @@ struct FileViewer: View {
               (buffer?.text.utf8.count ?? 0) <= SyntaxHighlighting.maxHighlightedSize
         else { return nil }
         return languageOverride ?? detectedLanguage
+    }
+
+    /// The highlighting theme's own background when highlighting, otherwise the Shade theme's code background.
+    private var codeBackground: NSColor {
+        let base = language.flatMap { _ in SyntaxHighlighting.shared.background(ofTheme: highlightTheme) }
+            ?? theme.terminalBackground
+        return base.withAlphaComponent(CGFloat(codeBackgroundOpacity))
     }
 
     private struct LoadRequest: Equatable {
@@ -533,7 +545,7 @@ struct FileViewer: View {
                         .padding(.top, 6)
                 }
                 if let diff {
-                    ReadOnlyText(text: diff)
+                    ReadOnlyText(text: diff, background: theme.terminalBackground.withAlphaComponent(CGFloat(codeBackgroundOpacity)))
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -543,6 +555,7 @@ struct FileViewer: View {
                 text: buffer.text,
                 font: NSFont.monospacedSystemFont(ofSize: codeSize, weight: .regular),
                 color: theme.codeTextColor,
+                background: codeBackground,
                 highlighting: language.map { CodeEditorView.Highlighting(language: $0, theme: highlightTheme) },
                 onChange: { buffers.update(cardID, text: $0) }
             )
