@@ -55,7 +55,20 @@ enum Sandbox {
     ]
 
     private static let writableHomeFiles = [
-        ".zsh_history", ".bash_history", ".lesshst", ".node_repl_history", ".python_history", ".viminfo",
+        ".bash_history", ".lesshst", ".node_repl_history", ".python_history", ".viminfo",
+        // jenv records the active Java version here when the shell starts; its shims stay protected.
+        ".jenv/jenv.version", ".jenv/version",
+    ]
+
+    /// Writable places whose contents later run outside this card: folders on PATH, build init scripts,
+    /// git and agent configuration. Writing there would let a program escape the sandbox.
+    private static let runsOutsideHomeFolders = [
+        ".local/bin", ".cargo/bin", ".bun/bin", ".deno/bin", ".gradle/init.d", ".config/git",
+    ]
+
+    private static let runsOutsideHomeFiles = [
+        ".gradle/init.gradle", ".gradle/init.gradle.kts",
+        ".claude/settings.json", ".claude/settings.local.json", ".claude/CLAUDE.md",
     ]
 
     /// Keys, tokens and credentials that sandboxed programs can neither read nor change.
@@ -92,9 +105,20 @@ enum Sandbox {
         lines += writableHomeFolders.map { "    (subpath \(homePath($0)))" }
         lines += writableHomeFiles.map { "    (literal \(homePath($0)))" }
         lines += [
-            "    ; Claude Code's settings file and its backups, zsh's completion cache.",
+            "    ; Claude Code's state file and its backups, zsh's history (with its lock file) and completion cache.",
             "    (regex #\"^\(escapedHome)/\\.claude\\.json\")",
+            "    (regex #\"^\(escapedHome)/\\.zsh_history\")",
             "    (regex #\"^\(escapedHome)/\\.zcompdump\")",
+            ")",
+            "",
+            "; Places whose contents run outside this card later: no writing, so nothing can escape the sandbox.",
+            "(deny file-write*",
+            "    (subpath \(quoted(root + "/.git/hooks")))",
+            "    (literal \(quoted(root + "/.git/config")))",
+        ]
+        lines += runsOutsideHomeFolders.map { "    (subpath \(homePath($0)))" }
+        lines += runsOutsideHomeFiles.map { "    (literal \(homePath($0)))" }
+        lines += [
             ")",
             "",
             "; Keys and credentials: no reading, no writing.",

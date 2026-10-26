@@ -70,6 +70,9 @@ macOS's built-in sandbox:
   the agents' own settings. Everything else on your Mac is read-only.
 - **Keys and credentials are off limits**: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, gcloud and GitHub
   CLI tokens, `.netrc`, `.npmrc`, `~/.gradle/gradle.properties` and similar can't be read at all.
+- **No way out through files that run later**: folders on your `PATH` (`~/.local/bin`, `~/.cargo/bin`…), Gradle init
+  scripts, git configuration and the project's `.git/hooks` and `.git/config`, and Claude Code's settings and
+  `CLAUDE.md` can't be written, because they'd run outside the sandbox the next time you use them.
 - **Strict (No Network)**: the same, plus no network except to your own Mac, for reviewing code without anything
   leaving it. (An agent that needs its cloud API won't work in this mode.)
 - The tab shows a green shield, and **Blocked Actions** opens a live log of everything the sandbox denied.
