@@ -2,14 +2,24 @@ import AppKit
 import SwiftUI
 import Translation
 
+/// Hooks the SwiftUI resize handles up to the panel, which AppKit owns.
+struct PanelResizer {
+    let begin: () -> Void
+    let update: (_ includeWidth: Bool) -> Void
+    let end: () -> Void
+}
+
 struct ContentView: View {
     @ObservedObject var settings: Settings
+    let resizer: PanelResizer
     let onClose: () -> Void
 
     @State private var translation = ""
     @State private var translationError: String?
     @State private var isTranslating = false
     @State private var showSettings = false
+    @State private var isResizing = false
+    @State private var cardPendingRemoval: UUID?
     /// Setting or invalidating this makes `.translationTask` run with a fresh session.
     @State private var translationConfig: TranslationSession.Configuration?
 
@@ -25,18 +35,23 @@ struct ContentView: View {
             toolbar
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
+            cardStrip
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
             Divider().opacity(0.4)
             HStack(spacing: 0) {
-                TextEditor(text: $settings.text)
+                TextEditor(text: $settings.currentText)
                     .font(.system(size: settings.fontSize))
                     .lineSpacing(4)
                     .scrollContentBackground(.hidden)
                     .padding(12)
+                    .id(settings.selectedCardID) // fresh undo history and scroll position per card
                 if settings.showTranslation {
                     Divider().opacity(0.4)
                     translationPane
                 }
             }
+            resizeBar
         }
         .task(id: translationRequest) {
             await scheduleTranslation(translationRequest)
@@ -48,7 +63,7 @@ struct ContentView: View {
 
     private var translationRequest: TranslationRequest {
         TranslationRequest(
-            text: settings.text,
+            text: settings.currentText,
             source: settings.sourceLanguage,
             target: settings.targetLanguage,
             enabled: settings.showTranslation
@@ -89,7 +104,7 @@ struct ContentView: View {
             .pickerStyle(.menu)
             .frame(width: 120)
             Button {
-                if let url = GoogleTranslate.webURL(for: settings.text, target: settings.targetLanguage) {
+                if let url = GoogleTranslate.webURL(for: settings.currentText, target: settings.targetLanguage) {
                     NSWorkspace.shared.open(url)
                 }
             } label: { Image(systemName: "globe") }
@@ -102,6 +117,108 @@ struct ContentView: View {
         }
         .buttonStyle(.borderless)
         .controlSize(.regular)
+    }
+
+    // MARK: - Cards
+
+    private var cardStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(settings.cards.enumerated()), id: \.element.id) { index, card in
+                    cardChip(card, index: index)
+                }
+                Button { settings.addCard() } label: { Image(systemName: "plus") }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut("t", modifiers: .command)
+                    .help("New card (⌘T)")
+            }
+        }
+        .confirmationDialog(
+            "Delete this card and its text?",
+            isPresented: Binding(get: { cardPendingRemoval != nil }, set: { if !$0 { cardPendingRemoval = nil } })
+        ) {
+            Button("Delete Card", role: .destructive) {
+                if let id = cardPendingRemoval { settings.removeCard(id) }
+            }
+        }
+    }
+
+    private func cardChip(_ card: Settings.Card, index: Int) -> some View {
+        let isSelected = card.id == settings.selectedCardID
+        return HStack(spacing: 6) {
+            Button { settings.selectedCardID = card.id } label: {
+                Text(card.title(fallback: "Card \(index + 1)"))
+                    .lineLimit(1)
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command) : nil)
+            .help(index < 9 ? "⌘\(index + 1)" : "")
+            if isSelected && settings.cards.count > 1 {
+                Button { requestRemoval(of: card) } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Close card")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(isSelected ? 0.18 : 0.06)))
+    }
+
+    /// Empty cards close right away; cards with text ask first.
+    private func requestRemoval(of card: Settings.Card) {
+        if card.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            settings.removeCard(card.id)
+        } else {
+            cardPendingRemoval = card.id
+        }
+    }
+
+    // MARK: - Resize
+
+    /// Bottom edge: the centre grip changes the height, the corner grip changes width and height.
+    private var resizeBar: some View {
+        ZStack {
+            Capsule()
+                .fill(Color.white.opacity(isResizing ? 0.5 : 0.25))
+                .frame(width: 44, height: 5)
+                .frame(width: 120, height: 14)
+                .contentShape(Rectangle())
+                .gesture(resizeGesture(includeWidth: false))
+                .onHover { $0 ? NSCursor.resizeUpDown.push() : NSCursor.pop() }
+            HStack {
+                Spacer()
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 14)
+                    .contentShape(Rectangle())
+                    .gesture(resizeGesture(includeWidth: true))
+                    .onHover { $0 ? NSCursor.crosshair.push() : NSCursor.pop() }
+                    .help("Drag to resize")
+            }
+            .padding(.trailing, 6)
+        }
+        .frame(height: 14)
+        .padding(.bottom, 2)
+    }
+
+    private func resizeGesture(includeWidth: Bool) -> some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { _ in
+                if !isResizing {
+                    isResizing = true
+                    resizer.begin()
+                }
+                resizer.update(includeWidth)
+            }
+            .onEnded { _ in
+                isResizing = false
+                resizer.end()
+            }
     }
 
     // MARK: - Translation
@@ -154,7 +271,7 @@ struct ContentView: View {
     /// Translates line by line so the layout of the notes is kept. Runs fully on-device; the first use
     /// of a language pair shows a system prompt to download it.
     private func translate(using session: TranslationSession) async {
-        var lines = settings.text.components(separatedBy: "\n")
+        var lines = settings.currentText.components(separatedBy: "\n")
         let requests = lines.indices
             .filter { !lines[$0].trimmingCharacters(in: .whitespaces).isEmpty }
             .map { TranslationSession.Request(sourceText: lines[$0], clientIdentifier: String($0)) }
@@ -184,8 +301,8 @@ struct SettingsPopover: View {
     var body: some View {
         Form {
             Section("Panel") {
-                Slider(value: $settings.widthFraction, in: 0.3...1) { Text("Width") }
-                Slider(value: $settings.heightFraction, in: 0.2...0.9) { Text("Height") }
+                Slider(value: $settings.widthFraction, in: Settings.widthRange) { Text("Width") }
+                Slider(value: $settings.heightFraction, in: Settings.heightRange) { Text("Height") }
                 Toggle("Hide from screen sharing", isOn: $settings.hideFromScreenShare)
                 Text("Best effort: some capture tools on recent macOS versions ignore this. Test it with your meeting app first.")
                     .font(.caption)

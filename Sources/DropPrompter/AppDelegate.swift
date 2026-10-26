@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var escapeMonitor: Any?
     private var subscriptions = Set<AnyCancellable>()
     private var isShown = false
+    private var resizeStart: (mouse: NSPoint, frame: NSRect)?
 
     private static let animationDuration = 0.18
 
@@ -57,7 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         background.state = .active
         background.maskImage = bottomRoundedMask(radius: 14)
 
-        let content = NSHostingView(rootView: ContentView(settings: settings, onClose: { [weak self] in self?.hide() }))
+        let resizer = PanelResizer(
+            begin: { [weak self] in self?.beginResize() },
+            update: { [weak self] in self?.updateResize(includeWidth: $0) },
+            end: { [weak self] in self?.endResize() }
+        )
+        let content = NSHostingView(rootView: ContentView(
+            settings: settings,
+            resizer: resizer,
+            onClose: { [weak self] in self?.hide() }
+        ))
         content.sizingOptions = []
 
         for view in [background, content] as [NSView] {
@@ -139,6 +149,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
     }
 
+    // MARK: - Resize
+
+    private func beginResize() {
+        resizeStart = (NSEvent.mouseLocation, panel.frame)
+    }
+
+    /// The top edge stays under the menu bar and the panel stays centered, so dragging
+    /// down grows the height and dragging sideways grows both sides at once.
+    private func updateResize(includeWidth: Bool) {
+        guard let start = resizeStart, let visible = panel.screen?.visibleFrame else { return }
+        let mouse = NSEvent.mouseLocation
+        let width = includeWidth ? start.frame.width + (mouse.x - start.mouse.x) * 2 : start.frame.width
+        let height = start.frame.height + (start.mouse.y - mouse.y)
+        let clampedWidth = CGFloat(Double(width / visible.width).clamped(to: Settings.widthRange)) * visible.width
+        let clampedHeight = CGFloat(Double(height / visible.height).clamped(to: Settings.heightRange)) * visible.height
+        panel.setFrame(
+            NSRect(x: (visible.midX - clampedWidth / 2).rounded(), y: visible.maxY - clampedHeight,
+                   width: clampedWidth.rounded(), height: clampedHeight.rounded()),
+            display: true
+        )
+    }
+
+    private func endResize() {
+        resizeStart = nil
+        guard let visible = panel.screen?.visibleFrame else { return }
+        settings.widthFraction = Double(panel.frame.width / visible.width)
+        settings.heightFraction = Double(panel.frame.height / visible.height)
+    }
+
     /// Centered horizontally, attached to the bottom of the menu bar; hidden = just above the screen.
     private func frames(on screen: NSScreen) -> (shown: NSRect, hidden: NSRect) {
         let visible = screen.visibleFrame
@@ -149,5 +188,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSRect(x: x, y: visible.maxY - height, width: width, height: height),
             NSRect(x: x, y: screen.frame.maxY, width: width, height: height)
         )
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

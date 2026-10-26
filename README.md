@@ -8,7 +8,10 @@ optionally show an on-device translation side by side.
 
 - **⌃Space** toggles the panel from any app, including full-screen apps and every Space. **Esc** hides it.
 - Translucent blurred background with an opacity slider; the text itself stays fully opaque.
-- Text is saved automatically and restored on next launch.
+- **Cards**: keep several notes side by side as tabs. **+** (⌘T) adds a card, **⌘1…⌘9** switches, **×** closes
+  (it asks first if the card has text). Each card's tab shows its first line. Everything is saved automatically.
+- **Resize** by dragging the grip at the bottom edge (height) or the bottom-right corner (width and height).
+  The panel stays centered under the menu bar and remembers its size.
 - Font size −/+, panel width/height in ⚙︎.
 - **Translate** shows a live translation next to your text, line by line, using Apple's on-device
   Translation framework: free, no account, and the text never leaves your Mac. Pick the source language
