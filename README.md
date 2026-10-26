@@ -152,6 +152,12 @@ work without switching to your IDE.
 
 ## Install
 
+### Download
+Get the latest `Shade-<version>.dmg` from [Releases](https://github.com/dineshvg/Shade/releases), open it and drag
+Shade to Applications. Release builds are signed and notarized by Apple, and run on Apple silicon and Intel Macs
+with macOS 15 or later.
+
+### Build from source
 Requirements: macOS 15 or later and Xcode 16+ (or matching Command Line Tools).
 
 ```bash
@@ -186,6 +192,40 @@ without installing it.
 - The repository view runs `git status`, `git diff` and `git ls-files` locally and never writes with git. Files
   are written only when you save them in a file card.
 
+## Security model
+
+Shade itself makes no network calls and stores everything locally (see [Privacy](#privacy)). Most of the security
+work is about **what programs in terminal cards, especially AI agents, can do**.
+
+**A sandboxed terminal card protects against**
+- changes outside the project folder you chose, apart from temp files, tool caches and the agents' own state;
+- reading keys and credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, cloud and GitHub CLI tokens, `.netrc`, `.npmrc`,
+  `gradle.properties`, the inspector's private key, and more);
+- escaping later through files that run outside the sandbox: folders on `PATH`, Gradle init scripts, git hooks and
+  configuration, Claude Code's settings;
+- with **Strict**: any network connection except to your own Mac. With **Inspect Traffic**, every request that does
+  go out is visible.
+
+**What it doesn't protect against** (known limits)
+- **Reading other files.** In *Project Only*, programs can still read the rest of your home folder, such as
+  documents, other repositories and app data, and send it out. Use *Strict*, ideally with *Inspect Traffic*, when
+  nothing may leave your Mac.
+- **Asking other apps to act.** A sandboxed program can still open a link in your browser, or, after macOS asks you,
+  control other apps with AppleScript. Those apps run outside the sandbox. Decline automation prompts you didn't
+  expect.
+- **Bad changes inside the project.** The sandbox limits *where* an agent can write, not *what* it writes there.
+  Review its changes in the sidebar before you build or commit them.
+- **macOS vulnerabilities**, and the future of `sandbox-exec`: Apple marks it as deprecated; it still works on
+  macOS 15 and 26.
+- **Normal terminal cards**, which run with your full user permissions, like Terminal.app.
+
+**Traffic inspection**: captured requests contain your code and prompts. They stay in mitmproxy on your Mac. Its
+private key in `~/.mitmproxy` lets anything that has it read traffic from inspected cards, so it's kept out of
+sandboxed cards; delete the folder to start fresh.
+
+**Reporting a vulnerability**: please use GitHub's private vulnerability reporting (the repository's *Security*
+tab) rather than a public issue.
+
 ## Tips and troubleshooting
 
 **The shortcut does nothing.** macOS uses ⌃Space for "Select the previous input source" by default and takes it
@@ -219,6 +259,14 @@ quitting the app.
   Shade. *Open Folder* in ⚙︎ takes you there.
 - Files over 500 KB stay plain so typing stays fast.
 
+## How Shade was built
+
+Shade was built by me, Dinesh Gangatharan, together with an AI coding assistant. I decided what Shade does and how
+it works: the features, the architecture, the security design of the sandbox and the traffic inspector, and the
+name. I tested every build on my Mac and reported what broke; the assistant wrote most of the code. Working that
+way is also why the sandbox and the inspector exist: I wanted to see, and limit, what coding agents do on my
+machine.
+
 ## Contributing
 
 Issues and pull requests are welcome. The app is a small Swift package; the main pieces are:
@@ -236,6 +284,17 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `HotKey.swift` | Global shortcut and conflict detection |
 | `Theme.swift` | Dark, Light and Paper themes |
 | `scripts/make_icon.py` | Draws the app icon (`Resources/AppIcon.png` / `.icns`) with Pillow |
+| `scripts/release.sh` | Builds a signed, notarized DMG for a release |
+
+### Making a release
+Needs an Apple Developer Program membership. Once: create a *Developer ID Application* certificate (Xcode ›
+Settings › Accounts › Manage Certificates) and store notarization credentials with
+`xcrun notarytool store-credentials shade-notary --apple-id <apple-id> --team-id <TEAMID>`. Then:
+
+```bash
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/release.sh 1.0.0
+gh release create v1.0.0 build/Shade-1.0.0.dmg --title "Shade 1.0.0" --generate-notes
+```
 
 ## License
 
