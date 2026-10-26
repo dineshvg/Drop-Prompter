@@ -24,7 +24,7 @@ optionally show an on-device translation side by side.
 ## Build and run (macOS 15+, Xcode 16+ or matching Command Line Tools)
 
 ```bash
-./scripts/install.sh   # builds, copies to /Applications and starts it
+./scripts/install.sh   # builds, moves the app to /Applications and starts it
 ```
 
 After that, start it like any other app (Spotlight, Launchpad, Finder). Opening it while it's already running
