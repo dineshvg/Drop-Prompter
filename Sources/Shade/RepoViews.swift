@@ -7,8 +7,6 @@ import SwiftUI
 /// better than SwiftUI's Text.
 struct ReadOnlyText: NSViewRepresentable {
     let text: NSAttributedString
-    /// Solid background, so colored code stays readable on the see-through panel.
-    let background: NSColor
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -29,8 +27,6 @@ struct ReadOnlyText: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = background
         guard let textView = scrollView.documentView as? NSTextView,
               textView.textStorage?.isEqual(to: text) != true
         else { return }
@@ -545,7 +541,9 @@ struct FileViewer: View {
                         .padding(.top, 6)
                 }
                 if let diff {
-                    ReadOnlyText(text: diff, background: theme.terminalBackground.withAlphaComponent(CGFloat(codeBackgroundOpacity)))
+                    ReadOnlyText(text: diff)
+                        // Drawn in SwiftUI: AppKit scroll views paint semi-transparent backgrounds as opaque.
+                        .background(Color(nsColor: theme.terminalBackground).opacity(codeBackgroundOpacity))
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -555,10 +553,11 @@ struct FileViewer: View {
                 text: buffer.text,
                 font: NSFont.monospacedSystemFont(ofSize: codeSize, weight: .regular),
                 color: theme.codeTextColor,
-                background: codeBackground,
                 highlighting: language.map { CodeEditorView.Highlighting(language: $0, theme: highlightTheme) },
                 onChange: { buffers.update(cardID, text: $0) }
             )
+            // Drawn in SwiftUI: AppKit scroll views paint semi-transparent backgrounds as opaque.
+            .background(Color(nsColor: codeBackground))
         } else if let message = buffers.messages[cardID] {
             Text(message)
                 .foregroundStyle(.secondary)
