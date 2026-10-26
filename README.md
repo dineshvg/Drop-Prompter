@@ -48,3 +48,16 @@ layout, turn that off in System Settings › Keyboard › Keyboard Shortcuts ›
 Edit `AppDelegate.swift`: `HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey))`.
 Key codes are the `kVK_*` constants in `Carbon.HIToolbox`; modifiers are `cmdKey`, `optionKey`,
 `controlKey`, `shiftKey`.
+
+## License
+
+Open source under the [MIT License](LICENSE). Copyright (c) 2026 dineshvg.
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense and sell this software, in private
+or commercial projects, as long as the copyright notice and license text are kept.
+
+## Disclaimer
+
+This is a personal tool, provided **as is, without warranty of any kind**. The author accepts no liability for
+any damage, data loss or other issues arising from its use. In particular, "Hide from screen sharing" is best
+effort and is not guaranteed to keep the panel out of every recording or screen share. Use at your own risk.
