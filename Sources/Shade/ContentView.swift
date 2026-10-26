@@ -7,6 +7,7 @@ struct ContentView: View {
     @ObservedObject var settings: Settings
     @ObservedObject var terminals: TerminalSessions
     @ObservedObject var buffers: FileBuffers
+    @ObservedObject var inspector: TrafficInspector
     let onClose: () -> Void
 
     @State private var translation = ""
@@ -246,7 +247,17 @@ struct ContentView: View {
             Text("may change only \(sandbox.root.lastPathComponent)")
                 .foregroundStyle(.secondary)
                 .help(sandbox.root.path)
+            if sandbox.inspectTraffic {
+                Label("Inspected", systemImage: "eye")
+                    .foregroundStyle(.orange)
+                    .help("HTTP(S) traffic goes through the local inspector (mitmproxy)")
+            }
             Spacer()
+            if sandbox.inspectTraffic {
+                Button { inspector.openWebInterface() } label: { Label("Open Inspector", systemImage: "network") }
+                    .disabled({ if case .running = inspector.state { return false } else { return true } }())
+                    .help("Every request and response of this card, in mitmproxy's web interface")
+            }
             Button { showBlockedActions() } label: { Label("Blocked Actions", systemImage: "list.bullet.rectangle") }
                 .help("Open a terminal card that lists what the sandbox denies, live")
         }
@@ -270,7 +281,8 @@ struct ContentView: View {
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let folder = panel.url else { return }
-        settings.addCard(kind: .terminal, sandbox: SandboxConfig(level: level, root: folder))
+        settings.addCard(kind: .terminal, sandbox: SandboxConfig(
+            level: level, root: folder, inspectTraffic: settings.inspectSandboxedTraffic))
     }
 
     private func showBlockedActions() {
@@ -420,6 +432,9 @@ struct ContentView: View {
                     ForEach(SandboxLevel.allCases) { level in
                         Button(level.name) { newSandboxedTerminal(level) }
                     }
+                    Divider()
+                    Toggle("Inspect Traffic", isOn: $settings.inspectSandboxedTraffic)
+                    Text("Shows every request agents send, using mitmproxy")
                 } label: {
                     Image(systemName: "lock.shield")
                 }
@@ -448,7 +463,8 @@ struct ContentView: View {
             if card.sandbox != nil {
                 Image(systemName: "lock.shield.fill").font(.system(size: 10))
                     .foregroundStyle(.green)
-                    .help("Sandboxed: \(card.sandbox?.name ?? ""), may change only \(card.sandboxRoot ?? "")")
+                    .help("Sandboxed: \(card.sandbox?.name ?? ""), may change only \(card.sandboxRoot ?? "")"
+                        + (card.inspectTraffic == true ? " · traffic inspected" : ""))
             } else if card.kind != .notes {
                 Image(systemName: card.kind == .terminal ? "apple.terminal" : "doc.text").font(.system(size: 10))
                     .foregroundStyle(.secondary)

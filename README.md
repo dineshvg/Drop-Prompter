@@ -86,6 +86,20 @@ on purpose: `git push` over SSH, installing with Homebrew, and builds that need 
 deprecated but still ships and which tools like Chrome and coding agents rely on. It's a strong safety net, not a
 guarantee.
 
+### See what agents send
+Turn on **Inspect Traffic** in the 🛡 menu before opening a sandboxed terminal card, and every HTTP(S) request
+made from that card, prompts, the code and command output sent to the model and its responses, shows up in
+[mitmproxy](https://mitmproxy.org)'s web interface (**Open Inspector** in the card's bar).
+- Install mitmproxy once: `brew install mitmproxy`. Shade starts and stops it for you (ports 18080 and 18081).
+- Only that card trusts the inspector's certificate; your Mac's trust settings stay as they are. Sandboxed programs
+  can read the certificate but not its private key.
+- **Strict + Inspect Traffic** is the auditable setup: the sandbox blocks every connection except to your Mac, so
+  an agent can only reach its backend through the inspector.
+- Covered: tools that use the standard proxy settings, such as Node (Claude Code, Copilot CLI), curl, git and
+  Python. Not covered: the JVM, so Gradle builds don't go through it (and in Strict mode can't download).
+- If mitmproxy isn't installed or doesn't start, the card doesn't start a shell, so nothing runs uninspected.
+- The captured traffic contains your code and prompts. It stays on your Mac, in mitmproxy, until you quit Shade.
+
 ### See what your agent changed
 When a terminal card's shell is inside a git repository, Shade notices and shows a slim repo bar: the
 branch and how many files changed, updated as commands run. It's built for watching Claude Code or Copilot CLI
@@ -162,6 +176,8 @@ without installing it.
 - Notes and settings are stored locally in the app's preferences.
 - Translation uses Apple's on-device Translation framework. The only feature that sends text anywhere is the 🌐
   button, which opens Google Translate in your browser.
+- Inspect Traffic runs mitmproxy locally and only for the cards you turn it on for; captured traffic never
+  leaves your Mac.
 - Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app. Sandboxed
   terminal cards restrict that shell and everything started in it to the project folder you chose; their profiles
   are stored in `~/Library/Application Support/Shade/Sandbox`.
@@ -213,6 +229,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
 | `Sandbox.swift` | Sandbox profiles for sandboxed terminal cards |
+| `TrafficInspector.swift` | Runs mitmproxy and sets up inspected terminal cards |
 | `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |
 | `FileBuffers.swift` | Editing, saving and conflict handling for file cards |
 | `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |

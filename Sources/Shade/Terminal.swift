@@ -194,11 +194,35 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         environment["SHADE_SANDBOX"] = sandbox.level.rawValue
         view.feed(text: "Shade: sandboxed shell (\(sandbox.level.name)). Writes are limited to "
             + "\(sandbox.root.path), temp and tool caches; keys and credentials can't be read.\r\n")
+
+        guard sandbox.inspectTraffic else {
+            launchSandboxed(shell: shell, profile: profile, root: sandbox.root, environment: environment)
+            return
+        }
+        // Inspected: start only once the inspector runs, so no request can slip past it.
+        view.feed(text: "Shade: starting the traffic inspector…\r\n")
+        let baseEnvironment = environment // a var can't be captured by the task
+        Task { [weak self] in
+            let inspection = await TrafficInspector.shared.environment()
+            guard let self, !self.isClosed else { return }
+            guard let inspection else {
+                let reason = TrafficInspector.shared.failureMessage ?? "The inspector didn't start."
+                self.view.feed(text: "Shade: \(reason) The shell was not started.\r\n")
+                return
+            }
+            self.view.feed(text: "Shade: HTTP(S) traffic goes through the inspector. Open it with “Open Inspector”.\r\n")
+            self.launchSandboxed(shell: shell, profile: profile, root: sandbox.root,
+                                 environment: baseEnvironment.merging(inspection) { _, inspected in inspected })
+        }
+    }
+
+    private func launchSandboxed(shell: String, profile: URL, root: URL, environment: [String: String]) {
+        startedAt = Date()
         view.startProcess(
             executable: Sandbox.executable,
             args: ["-f", profile.path, shell, "-l"],
             environment: environment.map { "\($0.key)=\($0.value)" },
-            currentDirectory: sandbox.root.path
+            currentDirectory: root.path
         )
     }
 

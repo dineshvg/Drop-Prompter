@@ -116,6 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        TrafficInspector.shared.stop()
+    }
+
     /// Opening the app again (Finder, Spotlight, Dock) while it's running brings the panel down.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         show()
@@ -134,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings: settings,
             terminals: TerminalSessions.shared,
             buffers: FileBuffers.shared,
+            inspector: TrafficInspector.shared,
             onClose: { [weak self] in self?.hide() }
         ))
         content.sizingOptions = []

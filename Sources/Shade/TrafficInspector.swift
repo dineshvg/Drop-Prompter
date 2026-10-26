@@ -1,0 +1,199 @@
+import AppKit
+import Foundation
+
+/// Local HTTPS inspector for terminal cards. Runs mitmproxy's web interface (`mitmweb`) and gives inspected
+/// cards the proxy settings and certificates they need, so every request an agent sends to its backend, and
+/// every response, can be read.
+@MainActor
+final class TrafficInspector: ObservableObject {
+    static let shared = TrafficInspector()
+
+    /// Ports away from the usual dev-server ports (8080 and friends).
+    static let proxyPort = 18080
+    static let webPort = 18081
+
+    enum State: Equatable {
+        case stopped
+        case starting
+        case running(webURL: URL)
+        case failed(String)
+    }
+
+    @Published private(set) var state: State = .stopped
+
+    private var process: Process?
+    private var startup: Task<Bool, Never>?
+    private var output = ""
+    private var webURL: URL?
+
+    // MARK: - Files
+
+    static var directory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Shade/Inspector", isDirectory: true)
+    }
+
+    /// mitmproxy's own folder: its CA private key lives here, so sandboxed cards can only read the certificate.
+    static var mitmproxyDirectory: URL {
+        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".mitmproxy", isDirectory: true)
+    }
+
+    static var certificate: URL { mitmproxyDirectory.appendingPathComponent("mitmproxy-ca-cert.pem") }
+
+    /// macOS's root certificates plus the inspector's, for tools that replace rather than extend their trust
+    /// store (curl, git, Python).
+    static var certificateBundle: URL { directory.appendingPathComponent("ca-bundle.pem") }
+
+    static var mitmwebPath: String? {
+        ["/opt/homebrew/bin/mitmweb", "/usr/local/bin/mitmweb", NSHomeDirectory() + "/.local/bin/mitmweb"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    // MARK: - Use
+
+    /// Environment for an inspected shell, starting the inspector first if needed. Nil when it can't run;
+    /// `state` then says why.
+    func environment() async -> [String: String]? {
+        guard await ensureRunning() else { return nil }
+        let proxy = "http://127.0.0.1:\(Self.proxyPort)"
+        let local = "localhost,127.0.0.1,::1"
+        let bundle = Self.certificateBundle.path
+        return [
+            "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy, "http_proxy": proxy,
+            "NO_PROXY": local, "no_proxy": local,
+            // Node (Claude Code, Copilot CLI) adds this certificate to its built-in ones.
+            "NODE_EXTRA_CA_CERTS": Self.certificate.path,
+            "SSL_CERT_FILE": bundle, "REQUESTS_CA_BUNDLE": bundle, "CURL_CA_BUNDLE": bundle, "GIT_SSL_CAINFO": bundle,
+            "SHADE_INSPECT": "1",
+        ]
+    }
+
+    var failureMessage: String? {
+        if case .failed(let message) = state { return message }
+        return nil
+    }
+
+    func openWebInterface() {
+        if case .running(let url) = state { NSWorkspace.shared.open(url) }
+    }
+
+    func stop() {
+        process?.terminate()
+        process = nil
+        state = .stopped
+    }
+
+    // MARK: - Starting
+
+    private func ensureRunning() async -> Bool {
+        if case .running = state, process?.isRunning == true { return true }
+        if let startup { return await startup.value }
+        let task = Task { await self.start() }
+        startup = task
+        let started = await task.value
+        startup = nil
+        return started
+    }
+
+    private func start() async -> Bool {
+        guard let mitmweb = Self.mitmwebPath else {
+            state = .failed("mitmproxy isn't installed. Install it with “brew install mitmproxy”, then open a new card.")
+            return false
+        }
+        state = .starting
+        output = ""
+        webURL = nil
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: mitmweb)
+        process.arguments = [
+            "--listen-host", "127.0.0.1", "--listen-port", "\(Self.proxyPort)",
+            "--web-host", "127.0.0.1", "--web-port", "\(Self.webPort)",
+            "--no-web-open-browser",
+        ]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let text = String(decoding: handle.availableData, as: UTF8.self)
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.consume(text) } }
+        }
+        process.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.process === process else { return }
+                    self.process = nil
+                    if case .running = self.state { self.state = .stopped }
+                }
+            }
+        }
+        do {
+            try process.run()
+        } catch {
+            state = .failed("Couldn't start mitmweb: \(error.localizedDescription)")
+            return false
+        }
+        self.process = process
+
+        // Ready once its certificate exists and it has printed where its web interface is.
+        for _ in 0..<50 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard process.isRunning else {
+                let lastLines = output.split(separator: "\n").suffix(3).joined(separator: " ")
+                state = .failed("mitmweb stopped while starting. \(lastLines)")
+                return false
+            }
+            if FileManager.default.fileExists(atPath: Self.certificate.path), webURL != nil { break }
+        }
+        guard FileManager.default.fileExists(atPath: Self.certificate.path) else {
+            stop()
+            state = .failed("mitmweb didn't create its certificate in ~/.mitmproxy.")
+            return false
+        }
+        guard await writeCertificateBundle() else {
+            stop()
+            state = .failed("Couldn't build the certificate bundle in \(Self.directory.path).")
+            return false
+        }
+        // Older mitmweb versions don't print a URL with an access token.
+        state = .running(webURL: webURL ?? URL(string: "http://127.0.0.1:\(Self.webPort)/")!)
+        return true
+    }
+
+    /// Picks the web interface's address (with its access token, when there is one) out of mitmweb's output.
+    private func consume(_ text: String) {
+        output += text
+        guard webURL == nil,
+              let range = output.range(of: #"http://127\.0\.0\.1:\#(Self.webPort)/\S*"#, options: .regularExpression)
+        else { return }
+        webURL = URL(string: String(output[range]))
+    }
+
+    private func writeCertificateBundle() async -> Bool {
+        // Read on the main actor; the work below runs on a background queue.
+        let certificate = Self.certificate
+        let directory = Self.directory
+        let bundle = Self.certificateBundle
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let roots = Process()
+                roots.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+                roots.arguments = ["find-certificate", "-a", "-p", "/System/Library/Keychains/SystemRootCertificates.keychain"]
+                let pipe = Pipe()
+                roots.standardOutput = pipe
+                roots.standardError = FileHandle.nullDevice
+                do {
+                    try roots.run()
+                    let rootCertificates = pipe.fileHandleForReading.readDataToEndOfFile()
+                    roots.waitUntilExit()
+                    let inspector = try Data(contentsOf: certificate)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try (rootCertificates + Data("\n".utf8) + inspector).write(to: bundle)
+                    continuation.resume(returning: roots.terminationStatus == 0)
+                } catch {
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+}
