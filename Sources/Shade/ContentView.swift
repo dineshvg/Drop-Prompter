@@ -285,6 +285,16 @@ struct ContentView: View {
             level: level, root: folder, inspectTraffic: settings.inspectSandboxedTraffic))
     }
 
+    /// Opens a terminal card that installs mitmproxy, so every step is visible.
+    private func installInspector() {
+        showSettings = false
+        Task {
+            let command = await Task.detached { TrafficInspector.installCommand }.value
+            let cardID = settings.addCard(kind: .terminal, name: "Install mitmproxy")
+            terminals.run(command, whenStarting: cardID)
+        }
+    }
+
     private func showBlockedActions() {
         let cardID = settings.addCard(kind: .terminal, name: "Sandbox Log")
         terminals.run(Sandbox.blockedActionsCommand, whenStarting: cardID)
@@ -399,7 +409,7 @@ struct ContentView: View {
                 .popover(isPresented: $showAbout, arrowEdge: .bottom) { AboutView() }
                 .help("About Shade")
             Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }
-                .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings, highlighting: SyntaxHighlighting.shared) }
+                .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings, highlighting: SyntaxHighlighting.shared, onInstallInspector: installInspector) }
             Button(action: onClose) { Image(systemName: "chevron.up") }
                 .help("Hide (Esc / ⌃Space)")
         }
@@ -796,7 +806,11 @@ struct ContentView: View {
 struct SettingsPopover: View {
     @ObservedObject var settings: Settings
     @ObservedObject var highlighting: SyntaxHighlighting
+    let onInstallInspector: () -> Void
     @State private var showThemeCatalog = false
+    /// Where mitmweb is installed; nil while checking or when missing.
+    @State private var inspectorPath: String?
+    @State private var checkedInspector = false
     /// Read from the system each time the popover opens; macOS owns the login item.
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginItemMessage: String?
@@ -866,6 +880,29 @@ struct SettingsPopover: View {
                     + "browser build (.js) into the folder's “languages” subfolder and restart Shade.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            Section("Traffic Inspector") {
+                if !checkedInspector {
+                    Text("Looking for mitmproxy…").foregroundStyle(.secondary)
+                } else if let inspectorPath {
+                    Label("mitmproxy is installed", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .help(inspectorPath)
+                } else {
+                    Label("mitmproxy isn't installed", systemImage: "xmark.circle")
+                        .foregroundStyle(.secondary)
+                }
+                Button(inspectorPath == nil ? "Install mitmproxy…" : "Reinstall or Update mitmproxy…",
+                       action: onInstallInspector)
+                    .disabled(!checkedInspector)
+                Text("Needed for Inspect Traffic. Opens a terminal card that runs the install, so you see every step. "
+                    + "On a work Mac, check your company's policy first: mitmproxy intercepts HTTPS traffic.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .task {
+                inspectorPath = await Task.detached { TrafficInspector.mitmwebPath }.value
+                checkedInspector = true
             }
             Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)

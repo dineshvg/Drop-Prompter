@@ -46,7 +46,7 @@ final class TrafficInspector: ObservableObject {
     static var certificateBundle: URL { directory.appendingPathComponent("ca-bundle.pem") }
 
     /// Finds mitmweb from Homebrew, pipx or uv (~/.local/bin), `pip install --user`, or the login shell's PATH.
-    static var mitmwebPath: String? {
+    nonisolated static var mitmwebPath: String? {
         let fileManager = FileManager.default
         let home = NSHomeDirectory()
         var candidates = ["/opt/homebrew/bin/mitmweb", "/usr/local/bin/mitmweb", home + "/.local/bin/mitmweb"]
@@ -59,7 +59,7 @@ final class TrafficInspector: ObservableObject {
     }
 
     /// `command -v` in the user's login shell: apps started from Finder don't see the PATH set in .zshrc.
-    private static func loginShellLookup(_ command: String) -> String? {
+    nonisolated private static func loginShellLookup(_ command: String) -> String? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
@@ -73,6 +73,16 @@ final class TrafficInspector: ObservableObject {
         let path = String(decoding: data, as: UTF8.self)
             .split(separator: "\n").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         return path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path) ? path : nil
+    }
+
+    /// Installs mitmproxy with the best tool on this Mac; PyPI packages also work where Homebrew's download
+    /// is blocked. Runs in a visible terminal card, never silently.
+    nonisolated static var installCommand: String {
+        let done = " && echo && echo 'mitmproxy is installed. Open a new inspected card to use it.'"
+        if loginShellLookup("pipx") != nil { return "pipx install mitmproxy" + done }
+        if loginShellLookup("uv") != nil { return "uv tool install mitmproxy" + done }
+        if loginShellLookup("brew") != nil { return "brew install pipx && pipx install mitmproxy" + done }
+        return "python3 -m pip install --user pipx && python3 -m pipx install mitmproxy" + done
     }
 
     // MARK: - Use
