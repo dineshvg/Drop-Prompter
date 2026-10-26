@@ -210,7 +210,9 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
                 self.view.feed(text: "Shade: \(reason) The shell was not started.\r\n")
                 return
             }
-            self.view.feed(text: "Shade: HTTP(S) traffic goes through the inspector. Open it with “Open Inspector”.\r\n")
+            let address = TrafficInspector.shared.webURL?.absoluteString ?? "http://127.0.0.1:\(TrafficInspector.webPort)/"
+            self.view.feed(text: "Shade: HTTP(S) traffic goes through the inspector. See it with “Open Inspector” "
+                + "above, the menu bar icon, or in your browser: \(address)\r\n")
             self.launchSandboxed(shell: shell, profile: profile, root: sandbox.root,
                                  environment: baseEnvironment.merging(inspection) { _, inspected in inspected })
         }

@@ -89,7 +89,9 @@ guarantee.
 ### See what agents send
 Turn on **Inspect Traffic** in the 🛡 menu before opening a sandboxed terminal card, and every HTTP(S) request
 made from that card, prompts, the code and command output sent to the model and its responses, shows up in
-[mitmproxy](https://mitmproxy.org)'s web interface (**Open Inspector** in the card's bar).
+[mitmproxy](https://mitmproxy.org)'s web interface: click **Open Inspector** in the card's bar or **Open Traffic
+Inspector** in the menu bar icon, then click a request (for example `api.anthropic.com/v1/messages`) and read its
+*Request* and *Response* tabs. The setting applies to cards opened after you turn it on.
 - Install mitmproxy once: `brew install mitmproxy`. Shade starts and stops it for you (ports 18080 and 18081).
 - Only that card trusts the inspector's certificate; your Mac's trust settings stay as they are. Sandboxed programs
   can read the certificate but not its private key.
