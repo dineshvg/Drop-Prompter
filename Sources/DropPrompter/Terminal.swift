@@ -24,10 +24,18 @@ final class TerminalSessions: ObservableObject {
     @Published private(set) var unseenOutput: Set<UUID> = []
     /// The card currently on screen; its output never counts as unseen.
     var visibleCardID: UUID? {
-        didSet { if let visibleCardID { unseenOutput.remove(visibleCardID) } }
+        didSet {
+            guard let visibleCardID else { return }
+            unseenOutput.remove(visibleCardID)
+            if sessions[visibleCardID] != nil { refreshRepo(of: visibleCardID, after: 0) }
+        }
     }
 
+    /// Git repository each terminal card's shell is in, if any.
+    @Published private(set) var repos: [UUID: RepoStatus] = [:]
+
     private var sessions: [UUID: TerminalSession] = [:]
+    private var repoRefreshes: [UUID: Task<Void, Never>] = [:]
     private(set) var theme: Theme = .dark
 
     func apply(_ theme: Theme) {
@@ -59,8 +67,30 @@ final class TerminalSessions: ObservableObject {
 
     func close(_ cardID: UUID) {
         sessions.removeValue(forKey: cardID)?.close()
+        repoRefreshes.removeValue(forKey: cardID)?.cancel()
         titles[cardID] = nil
+        repos[cardID] = nil
         unseenOutput.remove(cardID)
+    }
+
+    /// Re-reads the shell's directory and git status. While output streams in (an agent at work), this runs
+    /// at most once per `delay`, so git isn't started for every chunk of output.
+    func refreshRepo(of cardID: UUID, after delay: Double = 1) {
+        guard repoRefreshes[cardID] == nil else { return }
+        repoRefreshes[cardID] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self else { return }
+            defer { self.repoRefreshes[cardID] = nil }
+            guard let shell = self.sessions[cardID]?.view.process?.shellPid,
+                  let directory = ProcessDirectory.of(shell) else {
+                self.repos[cardID] = nil
+                return
+            }
+            let status = await Repo.status(at: directory)
+            // The card may have been closed while git was running.
+            guard self.sessions[cardID] != nil, self.repos[cardID] != status else { return }
+            self.repos[cardID] = status
+        }
     }
 
     fileprivate func titleChanged(_ cardID: UUID, to title: String) {
@@ -69,6 +99,7 @@ final class TerminalSessions: ObservableObject {
     }
 
     fileprivate func outputArrived(_ cardID: UUID) {
+        refreshRepo(of: cardID)
         guard cardID != visibleCardID, !unseenOutput.contains(cardID) else { return }
         unseenOutput.insert(cardID)
     }

@@ -55,6 +55,17 @@ other command in a terminal card without switching windows.
 - Closing a card or quitting the app asks first and names what would be stopped, for example
   *"Close terminal while “claude” is running?"*
 
+### See what your agent changed
+When a terminal card's shell is inside a git repository, Drop Prompter notices and shows a slim repo bar: the
+branch and how many files changed, updated as commands run. It's built for watching Claude Code or Copilot CLI
+work without switching to your IDE.
+- **Changes (⇧⌘G)** lists `git status` next to the terminal. Click a file to see its diff, colored and read-only.
+- **Quick Open (⌘P)**: type part of a file name and open the file as a viewer card next to your notes.
+- **Open in your editor**: one click hands a file or the whole repository to VS Code, Android Studio, Xcode or
+  your default app (choose in ⚙︎ › Code).
+- Strictly read-only: Drop Prompter never changes your files, and it runs git without taking locks, so it can't
+  get in the way of git commands running in the terminal.
+
 ### Make it yours
 - **Themes:** Dark, Light, and Paper, a warm, yellowish tone that's easy on the eyes. Terminal cards follow
   the theme.
@@ -72,6 +83,8 @@ other command in a terminal card without switching windows.
 | **⌘T** | New notes card |
 | **⇧⌘T** | New terminal card |
 | **⌘1 … ⌘9** | Switch to card 1 … 9 |
+| **⌘P** | Open a file from the terminal card's git repository |
+| **⇧⌘G** | Show or hide the repository's changes and diffs |
 | **⌘C ⌘V ⌘Z** | Copy, paste, undo |
 | Double-click a tab | Rename the card |
 
@@ -99,6 +112,7 @@ without installing it.
 - Translation uses Apple's on-device Translation framework. The only feature that sends text anywhere is the 🌐
   button, which opens Google Translate in your browser.
 - Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app.
+- The repository view only reads: it runs `git status`, `git diff` and `git ls-files` locally and never writes.
 
 ## Tips and troubleshooting
 
@@ -127,6 +141,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `AppDelegate.swift` | Panel, menu bar item, show/hide animation, shortcut, resizing |
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
+| `Repo.swift`, `RepoViews.swift` | Repository detection, changes, diffs, file viewer and Quick Open |
 | `HotKey.swift` | Global shortcut and conflict detection |
 | `Theme.swift` | Dark, Light and Paper themes |
 

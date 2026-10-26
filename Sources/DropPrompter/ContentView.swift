@@ -13,6 +13,10 @@ struct ContentView: View {
     @State private var isTranslating = false
     @State private var showSettings = false
     @State private var pendingRemoval: PendingRemoval?
+    /// Changes pane next to a terminal card that's in a git repository.
+    @State private var showChanges = false
+    /// Repository root while Quick Open (⌘P) is showing.
+    @State private var quickOpenRoot: URL?
     @State private var renamingCardID: UUID?
     @State private var renameText = ""
     @FocusState private var renameFieldFocused: Bool
@@ -46,16 +50,36 @@ struct ContentView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 6)
             Divider().opacity(0.4)
-            if settings.currentCard.kind == .terminal {
-                TerminalPane(sessions: terminals, cardID: settings.selectedCardID)
-                    .id(settings.selectedCardID)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 6)
-            } else {
+            switch settings.currentCard.kind {
+            case .notes:
                 editorRow
+            case .terminal:
+                terminalArea
+            case .file:
+                if let path = settings.currentCard.filePath {
+                    FileViewer(
+                        url: URL(fileURLWithPath: path),
+                        theme: settings.theme,
+                        codeSize: codeSize,
+                        editorBundleID: settings.editorBundleID
+                    )
+                    .id(settings.selectedCardID)
+                }
             }
             // Room for the AppKit resize grips along the bottom edge (see ResizeHandleView).
             Color.clear.frame(height: 14)
+        }
+        .overlay {
+            if let root = quickOpenRoot {
+                QuickOpenView(
+                    root: root,
+                    onOpen: { url in
+                        quickOpenRoot = nil
+                        settings.openFileCard(url)
+                    },
+                    onCancel: { quickOpenRoot = nil }
+                )
+            }
         }
         .overlay {
             if settings.showWelcome {
@@ -96,6 +120,72 @@ struct ContentView: View {
                 translationPane
             }
         }
+    }
+
+    /// Code in the file and diff viewers is smaller than notes text, but follows its size.
+    private var codeSize: CGFloat {
+        CGFloat(max(11, settings.fontSize * 0.65))
+    }
+
+    // MARK: - Terminal and repository
+
+    private var terminalArea: some View {
+        let cardID = settings.selectedCardID
+        let repo = terminals.repos[cardID]
+        return VStack(spacing: 0) {
+            if let repo {
+                repoBar(repo)
+                Divider().opacity(0.4)
+            }
+            HSplitView {
+                TerminalPane(sessions: terminals, cardID: cardID)
+                    .id(cardID)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+                    .frame(minWidth: 240)
+                if showChanges, let repo {
+                    ChangesPane(
+                        repo: repo,
+                        theme: settings.theme,
+                        codeSize: codeSize,
+                        editorBundleID: settings.editorBundleID,
+                        onOpenFile: { settings.openFileCard($0) }
+                    )
+                    .frame(minWidth: 240, idealWidth: 360)
+                }
+            }
+        }
+    }
+
+    /// Shown above a terminal card whose shell is inside a git repository.
+    private func repoBar(_ repo: RepoStatus) -> some View {
+        HStack(spacing: 10) {
+            Label(repo.branch, systemImage: "arrow.triangle.branch")
+                .help("Current branch")
+            Text(repo.root.lastPathComponent)
+                .foregroundStyle(.secondary)
+                .help(repo.root.path)
+            Text(repo.changes.isEmpty ? "clean" : "\(repo.changes.count) changed")
+                .foregroundStyle(repo.changes.isEmpty ? Color.secondary : Color.orange)
+            Spacer()
+            Button { quickOpenRoot = repo.root } label: { Label("Open File", systemImage: "magnifyingglass") }
+                .keyboardShortcut("p", modifiers: .command)
+                .help("Quick Open a file in this repository (⌘P)")
+            Toggle(isOn: $showChanges) { Label("Changes", systemImage: "plusminus") }
+                .toggleStyle(.button)
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .help("Show or hide changes and diffs (⇧⌘G)")
+            Button { CodeEditors.open(repo.root, with: settings.editorBundleID) } label: {
+                Image(systemName: "arrow.up.forward.app")
+            }
+            .help("Open the repository in \(CodeEditors.name(for: settings.editorBundleID))")
+            Button { CodeEditors.reveal(repo.root) } label: { Image(systemName: "folder") }
+                .help("Show in Finder")
+        }
+        .buttonStyle(.borderless)
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
     }
 
     private func hotKeyBanner(_ problem: String) -> some View {
@@ -209,8 +299,8 @@ struct ContentView: View {
     private func cardChip(_ card: Settings.Card, index: Int) -> some View {
         let isSelected = card.id == settings.selectedCardID
         return HStack(spacing: 6) {
-            if card.kind == .terminal {
-                Image(systemName: "apple.terminal").font(.system(size: 10))
+            if card.kind != .notes {
+                Image(systemName: card.kind == .terminal ? "apple.terminal" : "doc.text").font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
             if renamingCardID == card.id {
@@ -229,6 +319,7 @@ struct ContentView: View {
                     Text(card.title(fallback: "Card \(index + 1)", terminalTitle: terminals.titles[card.id]))
                         .lineLimit(1)
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                        .help(card.filePath ?? "")
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command) : nil)
@@ -293,6 +384,8 @@ struct ContentView: View {
                     message: "The shell running in it will be closed."
                 )
             }
+        case .file:
+            removeCard(card.id) // a viewer holds nothing that could be lost
         case .notes:
             if card.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 removeCard(card.id)
@@ -418,6 +511,12 @@ struct SettingsPopover: View {
                     ForEach(Theme.allCases) { Text($0.name).tag($0) }
                 }
                 .pickerStyle(.segmented)
+            }
+            Section("Code") {
+                Picker("Open files and repositories in", selection: $settings.editorBundleID) {
+                    Text("Default App").tag("")
+                    ForEach(CodeEditors.installed) { Text($0.name).tag($0.bundleID) }
+                }
             }
             Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)

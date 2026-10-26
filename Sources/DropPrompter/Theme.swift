@@ -37,6 +37,11 @@ enum Theme: String, CaseIterable, Identifiable {
         self == .paper ? Color(red: 0.30, green: 0.22, blue: 0.10) : nil
     }
 
+    /// Base color for code in the file and diff viewers.
+    var codeTextColor: NSColor {
+        self == .paper ? NSColor(srgbRed: 0.30, green: 0.22, blue: 0.10, alpha: 1) : .labelColor
+    }
+
     var terminalForeground: NSColor {
         switch self {
         case .dark: return .white

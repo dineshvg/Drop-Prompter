@@ -11,6 +11,8 @@ final class Settings: ObservableObject {
     /// Background (blur) opacity only; text stays fully opaque, like iTerm2's transparency.
     @Published var opacity: Double { didSet { save(opacity, "opacity") } }
     @Published var theme: Theme { didSet { save(theme.rawValue, "theme") } }
+    /// Bundle ID of the editor for "Open in…"; empty means the macOS default app.
+    @Published var editorBundleID: String { didSet { save(editorBundleID, "editorBundleID") } }
     @Published var widthFraction: Double { didSet { save(widthFraction, "widthFraction") } }
     @Published var heightFraction: Double { didSet { save(heightFraction, "heightFraction") } }
     /// Empty string means auto-detect.
@@ -42,6 +44,7 @@ final class Settings: ObservableObject {
         fontSize = d.object(forKey: "fontSize") as? Double ?? 20
         opacity = d.object(forKey: "opacity") as? Double ?? 0.8
         theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
+        editorBundleID = d.string(forKey: "editorBundleID") ?? ""
         widthFraction = d.object(forKey: "widthFraction") as? Double ?? 0.6
         heightFraction = d.object(forKey: "heightFraction") as? Double ?? 0.45
         sourceLanguage = d.string(forKey: "sourceLanguage") ?? ""
@@ -75,17 +78,20 @@ final class Settings: ObservableObject {
     // MARK: - Cards
 
     struct Card: Codable, Identifiable, Equatable {
-        enum Kind: String, Codable { case notes, terminal }
+        enum Kind: String, Codable { case notes, terminal, file }
 
         var id = UUID()
         var kind: Kind
         /// Name the user gave the card; nil shows an automatic title.
         var name: String?
         var text: String
+        /// Absolute path of the file a `.file` card shows.
+        var filePath: String?
 
-        init(kind: Kind = .notes, text: String = "") {
+        init(kind: Kind = .notes, text: String = "", filePath: String? = nil) {
             self.kind = kind
             self.text = text
+            self.filePath = filePath
         }
 
         /// Cards saved before `kind` and `name` existed load as notes cards.
@@ -95,6 +101,7 @@ final class Settings: ObservableObject {
             kind = try container.decodeIfPresent(Kind.self, forKey: .kind) ?? .notes
             name = try container.decodeIfPresent(String.self, forKey: .name)
             text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+            filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
         }
 
         /// Tab label: the user's name if set; otherwise the running program's title for terminals,
@@ -104,6 +111,8 @@ final class Settings: ObservableObject {
             switch kind {
             case .terminal:
                 return Self.shortened(terminalTitle ?? "Terminal", limit: 32)
+            case .file:
+                return Self.shortened(filePath.map { ($0 as NSString).lastPathComponent } ?? fallback, limit: 28)
             case .notes:
                 let line = text.split(separator: "\n").lazy
                     .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -133,6 +142,17 @@ final class Settings: ObservableObject {
         let card = Card(kind: kind)
         cards.append(card)
         selectedCardID = card.id
+    }
+
+    /// Shows a file in a viewer card, reusing the card if the file is already open.
+    func openFileCard(_ url: URL) {
+        if let existing = cards.first(where: { $0.kind == .file && $0.filePath == url.path }) {
+            selectedCardID = existing.id
+        } else {
+            let card = Card(kind: .file, filePath: url.path)
+            cards.append(card)
+            selectedCardID = card.id
+        }
     }
 
     /// An empty name switches back to the automatic title.
