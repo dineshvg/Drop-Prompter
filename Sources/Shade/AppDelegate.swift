@@ -220,6 +220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.toggleItem = toggleItem
         let welcomeItem = menu.addItem(withTitle: "Welcome & Shortcuts", action: #selector(showWelcome), keyEquivalent: "")
         welcomeItem.target = self
+        let inspectorItem = menu.addItem(withTitle: "Open Traffic Inspector", action: #selector(openInspector), keyEquivalent: "")
+        inspectorItem.target = self
         let aboutItem = menu.addItem(withTitle: "About Shade", action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(.separator())
@@ -228,6 +230,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Show / hide
+
+    /// Opens mitmproxy's web interface if it runs; otherwise explains how to start it.
+    @objc private func openInspector() {
+        if TrafficInspector.shared.webURL != nil {
+            TrafficInspector.shared.openWebInterface()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "The traffic inspector isn't running"
+        alert.informativeText = TrafficInspector.shared.failureMessage
+            ?? "It starts with the first inspected card: turn on Inspect Traffic in the shield menu next to +, "
+                + "then open a sandboxed terminal card."
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
 
     /// The standard macOS About window, with a thank-you note and a link to the repository.
     @objc private func showAbout() {

@@ -24,7 +24,8 @@ final class TrafficInspector: ObservableObject {
     private var process: Process?
     private var startup: Task<Bool, Never>?
     private var output = ""
-    private var webURL: URL?
+    /// Address mitmweb printed while starting (with its access token, when it uses one).
+    private var printedWebURL: URL?
 
     // MARK: - Files
 
@@ -73,8 +74,13 @@ final class TrafficInspector: ObservableObject {
         return nil
     }
 
+    var webURL: URL? {
+        if case .running(let url) = state { return url }
+        return nil
+    }
+
     func openWebInterface() {
-        if case .running(let url) = state { NSWorkspace.shared.open(url) }
+        if let webURL { NSWorkspace.shared.open(webURL) }
     }
 
     func stop() {
@@ -102,7 +108,7 @@ final class TrafficInspector: ObservableObject {
         }
         state = .starting
         output = ""
-        webURL = nil
+        printedWebURL = nil
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: mitmweb)
@@ -143,7 +149,7 @@ final class TrafficInspector: ObservableObject {
                 state = .failed("mitmweb stopped while starting. \(lastLines)")
                 return false
             }
-            if FileManager.default.fileExists(atPath: Self.certificate.path), webURL != nil { break }
+            if FileManager.default.fileExists(atPath: Self.certificate.path), printedWebURL != nil { break }
         }
         guard FileManager.default.fileExists(atPath: Self.certificate.path) else {
             stop()
@@ -156,17 +162,17 @@ final class TrafficInspector: ObservableObject {
             return false
         }
         // Older mitmweb versions don't print a URL with an access token.
-        state = .running(webURL: webURL ?? URL(string: "http://127.0.0.1:\(Self.webPort)/")!)
+        state = .running(webURL: printedWebURL ?? URL(string: "http://127.0.0.1:\(Self.webPort)/")!)
         return true
     }
 
     /// Picks the web interface's address (with its access token, when there is one) out of mitmweb's output.
     private func consume(_ text: String) {
         output += text
-        guard webURL == nil,
+        guard printedWebURL == nil,
               let range = output.range(of: #"http://127\.0\.0\.1:\#(Self.webPort)/\S*"#, options: .regularExpression)
         else { return }
-        webURL = URL(string: String(output[range]))
+        printedWebURL = URL(string: String(output[range]))
     }
 
     private func writeCertificateBundle() async -> Bool {
