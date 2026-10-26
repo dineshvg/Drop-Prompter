@@ -53,7 +53,7 @@ struct WelcomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Welcome to Drop Prompter")
+                    Text("Welcome to Shade")
                         .font(.title2.bold())
                     Text("A see-through notes panel that drops down from the top of your screen. "
                         + "Paste your talking points before a meeting and glance at them while you speak, "

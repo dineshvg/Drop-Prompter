@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-enum DropPrompterApp {
+enum ShadeApp {
     @MainActor
     static func main() {
         let app = NSApplication.shared

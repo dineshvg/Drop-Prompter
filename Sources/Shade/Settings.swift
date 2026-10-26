@@ -49,6 +49,7 @@ final class Settings: ObservableObject {
 
     private init() {
         let d = UserDefaults.standard
+        Self.migrateFromDropPrompter(d)
         let storedCards = d.data(forKey: "cards").flatMap { try? JSONDecoder().decode([Card].self, from: $0) } ?? []
         // Before cards existed, the single note was stored under "text".
         let initialCards = storedCards.isEmpty
@@ -78,6 +79,18 @@ final class Settings: ObservableObject {
 
     var hotKey: HotKeyPreset {
         HotKeyPreset.all.first { $0.id == hotKeyID } ?? HotKeyPreset.all[0]
+    }
+
+    /// Shade used to be called Drop Prompter (bundle ID local.dropprompter). Copies its cards and settings
+    /// once, on the first launch under the new name.
+    private static func migrateFromDropPrompter(_ defaults: UserDefaults) {
+        guard !defaults.bool(forKey: "migratedFromDropPrompter") else { return }
+        defaults.set(true, forKey: "migratedFromDropPrompter")
+        guard defaults.object(forKey: "cards") == nil,
+              let old = defaults.persistentDomain(forName: "local.dropprompter") else { return }
+        for (key, value) in old {
+            defaults.set(value, forKey: key)
+        }
     }
 
     private func save(_ value: Any, _ key: String) {

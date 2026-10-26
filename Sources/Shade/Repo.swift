@@ -179,7 +179,7 @@ struct CodeEditor: Identifiable, Hashable {
     var id: String { bundleID }
 }
 
-/// Hand-off to a real editor; Drop Prompter itself never changes files.
+/// Hand-off to a real editor; Shade itself never changes files.
 @MainActor
 enum CodeEditors {
     private static let candidates: [CodeEditor] = [

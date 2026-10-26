@@ -793,7 +793,7 @@ struct SettingsPopover: View {
             loginItemMessage = "Could not change the login item: \(error.localizedDescription)"
         }
         if service.status == .requiresApproval {
-            loginItemMessage = "Allow Drop Prompter in System Settings › General › Login Items."
+            loginItemMessage = "Allow Shade in System Settings › General › Login Items."
             SMAppService.openSystemSettingsLoginItems()
         }
         launchAtLogin = service.status == .enabled

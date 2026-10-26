@@ -21,7 +21,7 @@ final class HotKey {
             return noErr
         }, 1, &eventType, userData, &handlerRef)
 
-        let id = EventHotKeyID(signature: OSType(0x4452_5054), id: 1) // 'DRPT'
+        let id = EventHotKeyID(signature: OSType(0x5348_4445), id: 1) // 'SHDE'
         isRegistered = RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef) == noErr
     }
 

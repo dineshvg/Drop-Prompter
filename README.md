@@ -1,21 +1,21 @@
-# Drop Prompter
+# Shade
 
-**Your talking points, one keystroke away: in every meeting, on top of every app.**
+**Your notes, terminals and code, one keystroke away, on top of every app.**
 
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-SwiftUI%20%2B%20AppKit-orange?logo=swift)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue)
 
-Drop Prompter is a small, native macOS app that slides a translucent notes panel down from the top of your
-screen, like iTerm2's hotkey window, but for what you want to *say*. Press **⌃Space** in any app and your notes
-appear. Press it again and they're gone. Your meeting app stays in front the whole time.
+Shade is a small, native macOS app that pulls a translucent panel down from the top of your screen, like a
+window shade. Press **⌃Space** in any app and your notes appear; press it again and they're gone. The app you're
+in, your meeting or your IDE, stays in front the whole time.
 
 Keep a card per meeting, read a live translation next to your notes, and run Claude Code, Copilot CLI or any
 other command in a terminal card without switching windows.
 
 <!-- Screenshots: docs/screenshots/*.png, added once captured. -->
 
-## Why Drop Prompter
+## Why Shade
 
 - **Always within reach.** One global shortcut, from any app, over full-screen apps and on every Space.
   There's no window to find, and it's gone again just as fast.
@@ -61,7 +61,7 @@ other command in a terminal card without switching windows.
   *"Close terminal while “claude” is running?"*
 
 ### See what your agent changed
-When a terminal card's shell is inside a git repository, Drop Prompter notices and shows a slim repo bar: the
+When a terminal card's shell is inside a git repository, Shade notices and shows a slim repo bar: the
 branch and how many files changed, updated as commands run. It's built for watching Claude Code or Copilot CLI
 work without switching to your IDE.
 - **Repository sidebar (⌘B)**, pinned on the left or right as you like, with two tabs: **Changes** (`git status`)
@@ -108,14 +108,17 @@ work without switching to your IDE.
 Requirements: macOS 15 or later and Xcode 16+ (or matching Command Line Tools).
 
 ```bash
-git clone https://github.com/dineshvg/Drop-Prompter.git
-cd Drop-Prompter
+git clone https://github.com/dineshvg/Shade.git
+cd Shade
 ./scripts/install.sh
 ```
 
 `install.sh` builds the app, moves it to `/Applications` and starts it. From then on, start it like any other
 app from Spotlight, Launchpad or Finder, or turn on ⚙︎ › **Launch at login**. To update, run
 `git pull && ./scripts/install.sh` again.
+
+Coming from **Drop Prompter** (Shade's earlier name)? `install.sh` removes the old app, and Shade copies your cards
+and settings over on its first launch. If you used *Launch at login*, turn it on again in ⚙︎.
 
 For development: `swift run`, or `open Package.swift` in Xcode. `./scripts/bundle.sh` builds the app into `build/`
 without installing it.
@@ -133,7 +136,7 @@ without installing it.
 ## Tips and troubleshooting
 
 **The shortcut does nothing.** macOS uses ⌃Space for "Select the previous input source" by default and takes it
-before any app sees it. Drop Prompter detects this and shows a banner. Either turn that shortcut off in System
+before any app sees it. Shade detects this and shows a banner. Either turn that shortcut off in System
 Settings › Keyboard › Keyboard Shortcuts › Input Sources, or pick ⌃⇧Space, ⌃⌥Space, ⌃\` or ⌥\` in ⚙︎ › Shortcut.
 The app also tells you when another app has already taken a combination.
 

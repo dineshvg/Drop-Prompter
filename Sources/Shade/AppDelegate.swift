@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             consequences.append(unsaved == 1 ? "discards unsaved changes in 1 file" : "discards unsaved changes in \(unsaved) files")
         }
         let alert = NSAlert()
-        alert.messageText = "Quit Drop Prompter?"
+        alert.messageText = "Quit Shade?"
         alert.informativeText = "Quitting " + consequences.joined(separator: " and ") + "."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
@@ -204,7 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Drop Prompter")
+        statusItem.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Shade")
         let menu = NSMenu()
         let toggleItem = menu.addItem(withTitle: "Show / Hide   \(settings.hotKey.label)",
                                       action: #selector(toggle), keyEquivalent: "")
@@ -213,7 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let welcomeItem = menu.addItem(withTitle: "Welcome & Shortcuts", action: #selector(showWelcome), keyEquivalent: "")
         welcomeItem.target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Drop Prompter", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Shade", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 

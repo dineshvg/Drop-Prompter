@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "DropPrompter",
+    name: "Shade",
     platforms: [.macOS("15.0")], // Translation framework
     dependencies: [
         // Terminal emulator for the built-in terminal pane (MIT).
@@ -10,9 +10,9 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "DropPrompter",
+            name: "Shade",
             dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
-            path: "Sources/DropPrompter"
+            path: "Sources/Shade"
         )
     ]
 )
