@@ -63,3 +63,19 @@ enum Theme: String, CaseIterable, Identifiable {
         self == .dark ? 0.35 : 0.5
     }
 }
+
+extension Settings.GroupColor {
+    var swiftUIColor: Color {
+        switch self {
+        case .blue: return .blue
+        case .red: return .red
+        case .yellow: return .yellow
+        case .green: return .green
+        case .pink: return .pink
+        case .purple: return .purple
+        case .cyan: return .cyan
+        case .orange: return .orange
+        case .grey: return .gray
+        }
+    }
+}

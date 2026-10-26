@@ -35,6 +35,11 @@ other command in a terminal card without switching windows.
 - **⌃Space** (configurable) shows and hides the panel from any app; **Esc** hides it too.
 - **Cards** keep separate notes as tabs, for example one per meeting, talk or topic. **⌘T** adds one,
   **⌘1…⌘9** switches. Double-click a tab to rename it; otherwise it shows the card's first line.
+- **Groups**, like Chrome's tab groups: right-click a card › *Add to New Group*. Each group gets its own color
+  automatically and is named after the card's repository when it has one. Click the group's label to collapse or
+  expand it, double-click to rename it, and right-click to change its color, ungroup it or close it. Cards you open
+  from a grouped card (a new card, or a file from the sidebar) join its group, so a terminal and its files stay
+  together.
 - Everything is saved as you type and comes back after a restart.
 - A larger or smaller font, adjustable background opacity, and a panel you can **resize** by dragging its bottom
   edge or corner. It stays centered under the menu bar.

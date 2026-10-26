@@ -19,15 +19,38 @@ struct ContentView: View {
     /// Repository root while Quick Open (⌘P) is showing.
     @State private var quickOpenRoot: URL?
     @State private var renamingCardID: UUID?
+    @State private var renamingGroupID: UUID?
+    @FocusState private var groupRenameFocused: Bool
     @State private var renameText = ""
     @FocusState private var renameFieldFocused: Bool
     /// Setting or invalidating this makes `.translationTask` run with a fresh session.
     @State private var translationConfig: TranslationSession.Configuration?
 
     private struct PendingRemoval {
-        let cardID: UUID
+        let cardIDs: [UUID]
         let title: String
         let message: String
+        var confirmLabel = "Close Card"
+    }
+
+    /// One entry of the card strip: an ungrouped card, or a group with its cards.
+    private enum StripItem: Identifiable {
+        case card(StripCard)
+        case group(Settings.CardGroup, [StripCard])
+
+        var id: UUID {
+            switch self {
+            case .card(let item): return item.card.id
+            case .group(let group, _): return group.id
+            }
+        }
+    }
+
+    private struct StripCard: Identifiable {
+        let card: Settings.Card
+        /// Position in all cards, for ⌘1…⌘9 and fallback titles.
+        let index: Int
+        var id: UUID { card.id }
     }
 
     private struct TranslationRequest: Equatable {
@@ -323,8 +346,13 @@ struct ContentView: View {
     private var cardStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(Array(settings.cards.enumerated()), id: \.element.id) { index, card in
-                    cardChip(card, index: index)
+                ForEach(stripItems) { item in
+                    switch item {
+                    case .card(let item):
+                        cardChip(item.card, index: item.index)
+                    case .group(let group, let members):
+                        groupView(group, members: members)
+                    }
                 }
                 Button { settings.addCard() } label: { Image(systemName: "plus") }
                     .buttonStyle(.borderless)
@@ -341,7 +369,7 @@ struct ContentView: View {
             isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
             presenting: pendingRemoval
         ) { removal in
-            Button("Close Card", role: .destructive) { removeCard(removal.cardID) }
+            Button(removal.confirmLabel, role: .destructive) { removal.cardIDs.forEach(removeCard) }
             Button("Cancel", role: .cancel) {}
         } message: { removal in
             Text(removal.message)
@@ -403,6 +431,19 @@ struct ContentView: View {
             if card.name != nil {
                 Button("Use Automatic Title") { settings.rename(card.id, to: "") }
             }
+            Divider()
+            Button("Add to New Group") { addToNewGroup(card) }
+            let otherGroups = settings.groups.filter { $0.id != card.groupID }
+            if !otherGroups.isEmpty {
+                Menu("Add to Group") {
+                    ForEach(otherGroups) { group in
+                        Button(group.name) { settings.move(card.id, to: group.id) }
+                    }
+                }
+            }
+            if card.groupID != nil {
+                Button("Remove from Group") { settings.move(card.id, to: nil) }
+            }
             if settings.cards.count > 1 {
                 Divider()
                 Button("Close Card") { requestRemoval(of: card) }
@@ -410,7 +451,129 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Groups
+
+    private var stripItems: [StripItem] {
+        let all = settings.cards.enumerated().map { StripCard(card: $0.element, index: $0.offset) }
+        var items: [StripItem] = []
+        var placed = Set<UUID>()
+        for item in all {
+            guard let groupID = item.card.groupID,
+                  let group = settings.groups.first(where: { $0.id == groupID }) else {
+                items.append(.card(item))
+                continue
+            }
+            if placed.insert(groupID).inserted {
+                items.append(.group(group, all.filter { $0.card.groupID == groupID }))
+            }
+        }
+        return items
+    }
+
+    private func groupView(_ group: Settings.CardGroup, members: [StripCard]) -> some View {
+        HStack(spacing: 4) {
+            groupLabel(group, count: members.count)
+            if !group.isCollapsed {
+                ForEach(members) { member in
+                    cardChip(member.card, index: member.index)
+                }
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 14).fill(group.color.swiftUIColor.opacity(0.14)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(group.color.swiftUIColor.opacity(0.5), lineWidth: 1))
+    }
+
+    private func groupLabel(_ group: Settings.CardGroup, count: Int) -> some View {
+        Group {
+            if renamingGroupID == group.id {
+                TextField("Group name", text: $renameText)
+                    .textFieldStyle(.plain)
+                    .frame(width: 120)
+                    .padding(.horizontal, 8)
+                    .focused($groupRenameFocused)
+                    .onAppear { groupRenameFocused = true }
+                    .onSubmit(commitGroupRename)
+                    .onExitCommand { renamingGroupID = nil }
+                    .onChange(of: groupRenameFocused) { _, focused in
+                        if !focused { commitGroupRename() }
+                    }
+            } else {
+                Text(group.isCollapsed ? "\(group.name) · \(count)" : group.name)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(group.color.swiftUIColor))
+                    .contentShape(Capsule())
+                    .onTapGesture(count: 2) { startGroupRename(group) }
+                    .onTapGesture { settings.toggleCollapsed(group.id) }
+                    .help(group.isCollapsed ? "Expand group" : "Collapse group · double-click to rename")
+            }
+        }
+        .contextMenu {
+            Button("Rename Group…") { startGroupRename(group) }
+            Menu("Color") {
+                ForEach(Settings.GroupColor.allCases, id: \.self) { color in
+                    Button {
+                        settings.setColor(color, of: group.id)
+                    } label: {
+                        Label(color.rawValue.capitalized, systemImage: color == group.color ? "checkmark.circle.fill" : "circle.fill")
+                    }
+                }
+            }
+            Button(group.isCollapsed ? "Expand Group" : "Collapse Group") { settings.toggleCollapsed(group.id) }
+            Divider()
+            Button("Ungroup") { settings.ungroup(group.id) }
+            Button("Close Group") { requestRemoval(of: group) }
+        }
+    }
+
+    /// New group named after the card's repository when it has one, then ready to rename.
+    private func addToNewGroup(_ card: Settings.Card) {
+        let repoName = terminals.repos[card.id]?.root.lastPathComponent
+            ?? card.repoRoot.map { ($0 as NSString).lastPathComponent }
+        let groupID = settings.newGroup(with: card.id, name: repoName ?? "Group \(settings.groups.count + 1)")
+        if let group = settings.groups.first(where: { $0.id == groupID }) {
+            startGroupRename(group)
+        }
+    }
+
+    private func startGroupRename(_ group: Settings.CardGroup) {
+        renamingCardID = nil
+        renameText = group.name
+        renamingGroupID = group.id
+    }
+
+    private func commitGroupRename() {
+        guard let id = renamingGroupID else { return }
+        settings.renameGroup(id, to: renameText)
+        renamingGroupID = nil
+    }
+
+    /// Closing a group closes all its cards, so it always asks and says what would be lost.
+    private func requestRemoval(of group: Settings.CardGroup) {
+        let ids = settings.cardIDs(in: group.id)
+        var details = ["Closes its \(ids.count) \(ids.count == 1 ? "card" : "cards"), including notes in them."]
+        let running = ids.compactMap { terminals.runningProgram(in: $0) }
+        if !running.isEmpty {
+            details.append("Stops " + running.map { "“\($0)”" }.joined(separator: ", ") + ".")
+        }
+        let unsaved = ids.filter { buffers.isDirty($0) }.count
+        if unsaved > 0 {
+            details.append("Discards unsaved changes in \(unsaved) \(unsaved == 1 ? "file" : "files").")
+        }
+        pendingRemoval = PendingRemoval(
+            cardIDs: ids,
+            title: "Close group “\(group.name)”?",
+            message: details.joined(separator: " "),
+            confirmLabel: "Close Group"
+        )
+    }
+
     private func startRename(_ card: Settings.Card, index: Int) {
+        renamingGroupID = nil
         settings.selectedCardID = card.id
         renameText = card.name ?? card.title(fallback: "Card \(index + 1)", terminalTitle: terminals.titles[card.id])
         renamingCardID = card.id
@@ -429,13 +592,13 @@ struct ContentView: View {
         case .terminal:
             if let program = terminals.runningProgram(in: card.id) {
                 pendingRemoval = PendingRemoval(
-                    cardID: card.id,
+                    cardIDs: [card.id],
                     title: "Close terminal while “\(program)” is running?",
                     message: "Closing this card stops “\(program)” and anything else running in it."
                 )
             } else {
                 pendingRemoval = PendingRemoval(
-                    cardID: card.id,
+                    cardIDs: [card.id],
                     title: "Close this terminal card?",
                     message: "The shell running in it will be closed."
                 )
@@ -443,7 +606,7 @@ struct ContentView: View {
         case .file:
             if buffers.isDirty(card.id) {
                 pendingRemoval = PendingRemoval(
-                    cardID: card.id,
+                    cardIDs: [card.id],
                     title: "Close without saving?",
                     message: "Your changes to “\(card.title(fallback: "this file", terminalTitle: nil))” will be lost."
                 )
@@ -455,7 +618,7 @@ struct ContentView: View {
                 removeCard(card.id)
             } else {
                 pendingRemoval = PendingRemoval(
-                    cardID: card.id,
+                    cardIDs: [card.id],
                     title: "Delete this card?",
                     message: "Its text will be deleted."
                 )

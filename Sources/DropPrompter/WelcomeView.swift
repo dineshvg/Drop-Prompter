@@ -34,6 +34,8 @@ struct WelcomeView: View {
     private let tips: [Tip] = [
         ("rectangle.stack", "Cards: keep a note per meeting or topic. + adds one, × closes it. "
             + "Double-click a card (or right-click › Rename) to give it your own name."),
+        ("folder.badge.plus", "Groups: right-click a card › Add to New Group. Groups get a color, collapse with a click, "
+            + "and new cards and files opened from a group join it."),
         ("character.bubble", "Translate: shows a translation next to your text, on-device with Apple Translation."),
         ("apple.terminal", "Terminal cards run your shell inside the panel. Their tab shows the title the running "
             + "program sets, such as Claude Code or Copilot CLI status, and a dot when there's new output."),

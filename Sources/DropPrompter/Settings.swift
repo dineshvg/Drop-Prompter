@@ -6,7 +6,18 @@ final class Settings: ObservableObject {
 
     /// Note cards; there is always at least one.
     @Published var cards: [Card] { didSet { saveCards() } }
-    @Published var selectedCardID: UUID { didSet { save(selectedCardID.uuidString, "selectedCardID") } }
+    @Published var selectedCardID: UUID {
+        didSet {
+            save(selectedCardID.uuidString, "selectedCardID")
+            // Like Chrome: selecting a card in a collapsed group opens the group.
+            if let groupID = currentCard.groupID, let index = groups.firstIndex(where: { $0.id == groupID }),
+               groups[index].isCollapsed {
+                groups[index].isCollapsed = false
+            }
+        }
+    }
+    /// Named, colored groups of cards.
+    @Published var groups: [CardGroup] { didSet { saveGroups() } }
     @Published var fontSize: Double { didSet { save(fontSize, "fontSize") } }
     /// Background (blur) opacity only; text stays fully opaque, like iTerm2's transparency.
     @Published var opacity: Double { didSet { save(opacity, "opacity") } }
@@ -46,6 +57,7 @@ final class Settings: ObservableObject {
         cards = initialCards
         let storedSelection = d.string(forKey: "selectedCardID").flatMap(UUID.init(uuidString:))
         selectedCardID = initialCards.first { $0.id == storedSelection }?.id ?? initialCards[0].id
+        groups = d.data(forKey: "groups").flatMap { try? JSONDecoder().decode([CardGroup].self, from: $0) } ?? []
         fontSize = d.object(forKey: "fontSize") as? Double ?? 20
         opacity = d.object(forKey: "opacity") as? Double ?? 0.8
         theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
@@ -76,6 +88,10 @@ final class Settings: ObservableObject {
         if let data = try? JSONEncoder().encode(cards) { save(data, "cards") }
     }
 
+    private func saveGroups() {
+        if let data = try? JSONEncoder().encode(groups) { save(data, "groups") }
+    }
+
     private static let welcomeText = """
         Paste your talking points here.
 
@@ -97,6 +113,7 @@ final class Settings: ObservableObject {
         var filePath: String?
         /// Root of the git repository the file belongs to, for its diff and the sidebar.
         var repoRoot: String?
+        var groupID: UUID?
 
         init(kind: Kind = .notes, text: String = "", filePath: String? = nil, repoRoot: String? = nil) {
             self.kind = kind
@@ -114,6 +131,7 @@ final class Settings: ObservableObject {
             text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
             filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
             repoRoot = try container.decodeIfPresent(String.self, forKey: .repoRoot)
+            groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
         }
 
         /// Tab label: the user's name if set; otherwise the running program's title for terminals,
@@ -150,9 +168,12 @@ final class Settings: ObservableObject {
         set { cards[selectedIndex].text = newValue }
     }
 
+    /// New cards join the current card's group, like a tab opened from a grouped tab in Chrome.
     func addCard(kind: Card.Kind = .notes) {
-        let card = Card(kind: kind)
+        var card = Card(kind: kind)
+        card.groupID = currentCard.groupID
         cards.append(card)
+        keepGroupsTogether()
         selectedCardID = card.id
     }
 
@@ -161,8 +182,10 @@ final class Settings: ObservableObject {
         if let existing = cards.first(where: { $0.kind == .file && $0.filePath == url.path }) {
             selectedCardID = existing.id
         } else {
-            let card = Card(kind: .file, filePath: url.path, repoRoot: repoRoot?.path)
+            var card = Card(kind: .file, filePath: url.path, repoRoot: repoRoot?.path)
+            card.groupID = currentCard.groupID
             cards.append(card)
+            keepGroupsTogether()
             selectedCardID = card.id
         }
     }
@@ -180,6 +203,97 @@ final class Settings: ObservableObject {
         if selectedCardID == id {
             selectedCardID = cards[min(index, cards.count - 1)].id
         }
+        removeEmptyGroups()
+    }
+
+    // MARK: - Groups
+
+    /// Puts a card into a new group with the next unused color and returns the group's ID.
+    @discardableResult
+    func newGroup(with cardID: UUID, name: String) -> UUID {
+        let used = Set(groups.map(\.color))
+        let color = GroupColor.allCases.first { !used.contains($0) }
+            ?? GroupColor.allCases[groups.count % GroupColor.allCases.count]
+        let group = CardGroup(name: name, color: color)
+        groups.append(group)
+        move(cardID, to: group.id)
+        return group.id
+    }
+
+    /// Moves a card into a group, or out of any group with nil.
+    func move(_ cardID: UUID, to groupID: UUID?) {
+        guard let index = cards.firstIndex(where: { $0.id == cardID }) else { return }
+        cards[index].groupID = groupID
+        keepGroupsTogether()
+        removeEmptyGroups()
+    }
+
+    func renameGroup(_ groupID: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = groups.firstIndex(where: { $0.id == groupID }) else { return }
+        groups[index].name = trimmed
+    }
+
+    func setColor(_ color: GroupColor, of groupID: UUID) {
+        guard let index = groups.firstIndex(where: { $0.id == groupID }) else { return }
+        groups[index].color = color
+    }
+
+    func toggleCollapsed(_ groupID: UUID) {
+        guard let index = groups.firstIndex(where: { $0.id == groupID }) else { return }
+        // Collapsing the group of the selected card moves the selection outside it, as Chrome does.
+        if !groups[index].isCollapsed, currentCard.groupID == groupID,
+           let outside = cards.first(where: { $0.groupID != groupID }) {
+            selectedCardID = outside.id
+        }
+        groups[index].isCollapsed.toggle()
+    }
+
+    /// Dissolves the group; its cards stay open.
+    func ungroup(_ groupID: UUID) {
+        for index in cards.indices where cards[index].groupID == groupID {
+            cards[index].groupID = nil
+        }
+        groups.removeAll { $0.id == groupID }
+    }
+
+    func cardIDs(in groupID: UUID) -> [UUID] {
+        cards.filter { $0.groupID == groupID }.map(\.id)
+    }
+
+    /// Keeps the cards of each group next to each other, at the position of the group's first card.
+    private func keepGroupsTogether() {
+        var ordered: [Card] = []
+        var placed = Set<UUID>()
+        for card in cards {
+            guard let groupID = card.groupID else {
+                ordered.append(card)
+                continue
+            }
+            if placed.insert(groupID).inserted {
+                ordered.append(contentsOf: cards.filter { $0.groupID == groupID })
+            }
+        }
+        if ordered.map(\.id) != cards.map(\.id) { cards = ordered }
+    }
+
+    private func removeEmptyGroups() {
+        let used = Set(cards.compactMap(\.groupID))
+        if groups.contains(where: { !used.contains($0.id) }) {
+            groups.removeAll { !used.contains($0.id) }
+        }
+    }
+
+    struct CardGroup: Codable, Identifiable, Equatable {
+        var id = UUID()
+        var name: String
+        var color: GroupColor
+        var isCollapsed = false
+    }
+
+    /// Group colors in the order they're handed out, like Chrome's tab groups.
+    enum GroupColor: String, Codable, CaseIterable {
+        case blue, red, yellow, green, pink, purple, cyan, orange, grey
     }
 
     // MARK: - Languages
