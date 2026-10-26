@@ -13,7 +13,8 @@ window shade. Press **⌃Space** in any app and your notes appear; press it agai
 in, your meeting or your IDE, stays in front the whole time.
 
 Keep a card per meeting, read a live translation next to your notes, and run Claude Code, Copilot CLI or any
-other command in a terminal card without switching windows.
+other command in a terminal card without switching windows: sandboxed, if you like, so an agent can only change
+the project you give it.
 
 <!-- Screenshots: docs/screenshots/*.png, added once captured. -->
 
@@ -28,6 +29,8 @@ other command in a terminal card without switching windows.
   never leaves your Mac.
 - **More than notes.** Terminal cards run your shell right in the panel. Each card's tab shows the live status
   that tools like Claude Code and Copilot CLI write to the terminal title.
+- **Let agents work, safely.** Sandboxed terminal cards keep an agent inside its project folder and away from your
+  keys and credentials, while the sidebar shows every change it makes as it happens.
 - **Native, small and private.** Swift, SwiftUI and AppKit, no Electron. No account, no analytics, no
   telemetry. Everything stays on your Mac.
 
@@ -125,6 +128,7 @@ work without switching to your IDE.
 | **Esc** | Hide the panel (in a terminal card, Esc goes to the terminal) |
 | **⌘T** | New notes card |
 | **⇧⌘T** | New terminal card |
+| **🛡** button | New sandboxed terminal card (then pick the project folder) |
 | **⌘1 … ⌘9** | Switch to card 1 … 9 |
 | **⌘P** | Open a file from the terminal card's git repository |
 | **⌘B** | Show or hide the repository sidebar (changes and files) |
@@ -158,7 +162,9 @@ without installing it.
 - Notes and settings are stored locally in the app's preferences.
 - Translation uses Apple's on-device Translation framework. The only feature that sends text anywhere is the 🌐
   button, which opens Google Translate in your browser.
-- Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app.
+- Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app. Sandboxed
+  terminal cards restrict that shell and everything started in it to the project folder you chose; their profiles
+  are stored in `~/Library/Application Support/Shade/Sandbox`.
 - Highlighting runs locally. Shade only goes online when you click **Download** in *Get More Themes*, and then
   only to cdnjs for that theme file.
 - The repository view runs `git status`, `git diff` and `git ls-files` locally and never writes with git. Files
@@ -179,8 +185,23 @@ it.
 language pair. Manage downloaded languages in System Settings › General › Language & Region › Translation
 Languages.
 
+**A tool fails in a sandboxed card.** Click **Blocked Actions** in the card's bar: it lists, live, what the sandbox
+denied. Expected ones are `git push` over SSH, `brew install`, and builds that read secrets from
+`~/.gradle/gradle.properties`; run those in a normal terminal card. If something harmless is blocked, open an
+issue with the denied path.
+
 **Terminal cards after a restart.** The cards come back, each with a fresh shell; running programs don't survive
 quitting the app.
+
+## Customizing syntax highlighting
+
+- **Themes**: ⚙︎ › Syntax Highlighting › *Get More Themes…* lists every theme of the bundled highlight.js release
+  (11.11.1). Downloaded themes go to `~/Library/Application Support/Shade/Highlighting/themes`; you can also drop
+  any highlight.js theme `.css` file there.
+- **Languages**: about 190 are built in. For another one, put its highlight.js *browser build* (a `.js` file that
+  calls `hljs.registerLanguage`) into `~/Library/Application Support/Shade/Highlighting/languages` and restart
+  Shade. *Open Folder* in ⚙︎ takes you there.
+- Files over 500 KB stay plain so typing stays fast.
 
 ## Contributing
 
@@ -199,16 +220,6 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `Theme.swift` | Dark, Light and Paper themes |
 | `scripts/make_icon.py` | Draws the app icon (`Resources/AppIcon.png` / `.icns`) with Pillow |
 
-## Customizing syntax highlighting
-
-- **Themes**: ⚙︎ › Syntax Highlighting › *Get More Themes…* lists every theme of the bundled highlight.js release
-  (11.11.1). Downloaded themes go to `~/Library/Application Support/Shade/Highlighting/themes`; you can also drop
-  any highlight.js theme `.css` file there.
-- **Languages**: about 190 are built in. For another one, put its highlight.js *browser build* (a `.js` file that
-  calls `hljs.registerLanguage`) into `~/Library/Application Support/Shade/Highlighting/languages` and restart
-  Shade. *Open Folder* in ⚙︎ takes you there.
-- Files over 500 KB stay plain so typing stays fast.
-
 ## License
 
 Open source under the [MIT License](LICENSE). Copyright (c) 2026 Dinesh Gangatharan. Third-party components and their
@@ -221,4 +232,5 @@ or commercial projects, as long as the copyright notice and license text are kep
 
 This is a personal tool, provided **as is, without warranty of any kind**. The author accepts no liability for
 any damage, data loss or other issues arising from its use. In particular, "Hide from screen sharing" is best
-effort and is not guaranteed to keep the panel out of every recording or screen share. Use at your own risk.
+effort and is not guaranteed to keep the panel out of every recording or screen share, and the terminal sandbox
+reduces what a program can reach but is not a guarantee against a determined attacker. Use at your own risk.
