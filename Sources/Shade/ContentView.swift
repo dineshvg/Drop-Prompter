@@ -899,6 +899,10 @@ struct SettingsPopover: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Toggle("Show in Dock", isOn: $settings.showInDock)
+                Text("Also lists Shade in Force Quit (⌥⌘⎋), in case it ever stops responding.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("Panel") {
                 Slider(value: $settings.widthFraction, in: Settings.widthRange) { Text("Width") }
