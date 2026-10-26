@@ -1,3 +1,5 @@
+<p align="center"><img src="Resources/AppIcon.png" width="128" alt="Shade icon"></p>
+
 # Shade
 
 **Your notes, terminals and code, one keystroke away, on top of every app.**
@@ -91,7 +93,8 @@ work without switching to your IDE.
 - **Hide from screen sharing** (on by default) keeps the panel out of most screen shares and recordings. It's
   best effort; see [Tips](#tips-and-troubleshooting).
 - **Launch at login**, quietly in the menu bar until you need it.
-- A short **welcome screen** explains the basics on first launch; open it again any time with **?**.
+- A short **welcome screen** explains the basics on first launch; open it again any time with **?**. The **ⓘ**
+  button shows the version and where to find the project.
 
 ## Keyboard shortcuts
 
@@ -172,6 +175,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |
 | `HotKey.swift` | Global shortcut and conflict detection |
 | `Theme.swift` | Dark, Light and Paper themes |
+| `scripts/make_icon.py` | Draws the app icon (`Resources/AppIcon.png` / `.icns`) with Pillow |
 
 ## Customizing syntax highlighting
 

@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var translationError: String?
     @State private var isTranslating = false
     @State private var showSettings = false
+    @State private var showAbout = false
     @State private var pendingRemoval: PendingRemoval?
     /// Status and files of the repository shown in the sidebar and file cards.
     @StateObject private var repoWatcher = RepoWatcher()
@@ -337,6 +338,9 @@ struct ContentView: View {
 
             Button { settings.showWelcome = true } label: { Image(systemName: "questionmark.circle") }
                 .help("Welcome and keyboard shortcuts")
+            Button { showAbout.toggle() } label: { Image(systemName: "info.circle") }
+                .popover(isPresented: $showAbout, arrowEdge: .bottom) { AboutView() }
+                .help("About Shade")
             Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings, highlighting: SyntaxHighlighting.shared) }
             Button(action: onClose) { Image(systemName: "chevron.up") }

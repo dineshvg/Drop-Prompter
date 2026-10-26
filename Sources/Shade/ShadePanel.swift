@@ -2,10 +2,10 @@ import AppKit
 
 /// Borderless, floating panel that sits above full-screen apps and on every Space.
 /// It can take keyboard focus without activating the app, so the meeting app stays frontmost.
-final class PromptPanel: NSPanel {
+final class ShadePanel: NSPanel {
     /// Factory instead of a custom init, so the inherited NSWindow initializers stay intact.
-    static func make() -> PromptPanel {
-        let panel = PromptPanel(
+    static func make() -> ShadePanel {
+        let panel = ShadePanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,

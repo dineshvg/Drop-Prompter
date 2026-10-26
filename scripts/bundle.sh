@@ -14,6 +14,8 @@ cp "$BIN" "$APP/Contents/MacOS/Shade"
 # highlight.js, its built-in themes and the theme catalog, read by SyntaxHighlighting.swift.
 mkdir -p "$APP/Contents/Resources"
 cp -R Resources/Highlighting "$APP/Contents/Resources/"
+# App icon, drawn by scripts/make_icon.py.
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -23,6 +25,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>Shade</string>
     <key>CFBundleIdentifier</key><string>io.github.dineshvg.shade</string>
     <key>CFBundleExecutable</key><string>Shade</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>

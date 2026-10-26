@@ -8,7 +8,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = Settings.shared
-    private let panel = PromptPanel.make()
+    private let panel = ShadePanel.make()
     private let background = NSVisualEffectView()
     /// Color over the blur for themes that tint it (Paper).
     private let tintView = NSView()
@@ -206,7 +206,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Shade")
+        // A window with its top third pulled down, like the panel itself.
+        statusItem.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Shade")
         let menu = NSMenu()
         let toggleItem = menu.addItem(withTitle: "Show / Hide   \(settings.hotKey.label)",
                                       action: #selector(toggle), keyEquivalent: "")
@@ -214,12 +215,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.toggleItem = toggleItem
         let welcomeItem = menu.addItem(withTitle: "Welcome & Shortcuts", action: #selector(showWelcome), keyEquivalent: "")
         welcomeItem.target = self
+        let aboutItem = menu.addItem(withTitle: "About Shade", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Shade", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
     // MARK: - Show / hide
+
+    /// The standard macOS About window, with a thank-you note and a link to the repository.
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: ShadeInfo.credits])
+    }
 
     @objc private func showWelcome() {
         settings.showWelcome = true
