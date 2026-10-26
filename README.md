@@ -11,6 +11,8 @@ optionally show an on-device translation side by side. Terminal cards run your s
 - **⌃Space** (configurable) toggles the panel from any app, including full-screen apps and every Space.
   **Esc** hides it.
 - Translucent blurred background with an opacity slider; the text itself stays fully opaque.
+- **Themes**: Dark, Light and Paper (a warm, yellowish tone with brown text), from the palette button in the
+  toolbar or ⚙︎ › Appearance. Terminal cards follow the theme.
 - **Cards**: keep several notes side by side as tabs. **+** (⌘T) adds a notes card, **⌘1…⌘9** switches, **×** closes
   (it asks first if the card has text). A card's tab shows its first line, or the name you give it: double-click
   the tab, or right-click › Rename (an empty name goes back to the automatic title). Everything is saved

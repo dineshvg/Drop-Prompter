@@ -29,6 +29,12 @@ final class ResizeHandleView: NSView {
         addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
     }
 
+    /// The grips use the label color, which differs between the light and dark themes.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
     override func mouseEntered(with event: NSEvent) { cursor.set() }
     override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
 
@@ -42,11 +48,11 @@ final class ResizeHandleView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         switch kind {
         case .bottom:
-            NSColor.white.withAlphaComponent(0.35).setFill()
+            NSColor.labelColor.withAlphaComponent(0.35).setFill()
             let grip = NSRect(x: bounds.midX - 22, y: bounds.midY - 2.5, width: 44, height: 5)
             NSBezierPath(roundedRect: grip, xRadius: 2.5, yRadius: 2.5).fill()
         case .corner:
-            NSColor.white.withAlphaComponent(0.45).setStroke()
+            NSColor.labelColor.withAlphaComponent(0.45).setStroke()
             for offset in stride(from: CGFloat(4), through: 12, by: 4) {
                 let line = NSBezierPath()
                 line.move(to: NSPoint(x: bounds.maxX - offset - 4, y: 4))

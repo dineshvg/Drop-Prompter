@@ -10,6 +10,7 @@ final class Settings: ObservableObject {
     @Published var fontSize: Double { didSet { save(fontSize, "fontSize") } }
     /// Background (blur) opacity only; text stays fully opaque, like iTerm2's transparency.
     @Published var opacity: Double { didSet { save(opacity, "opacity") } }
+    @Published var theme: Theme { didSet { save(theme.rawValue, "theme") } }
     @Published var widthFraction: Double { didSet { save(widthFraction, "widthFraction") } }
     @Published var heightFraction: Double { didSet { save(heightFraction, "heightFraction") } }
     /// Empty string means auto-detect.
@@ -40,6 +41,7 @@ final class Settings: ObservableObject {
         selectedCardID = initialCards.first { $0.id == storedSelection }?.id ?? initialCards[0].id
         fontSize = d.object(forKey: "fontSize") as? Double ?? 20
         opacity = d.object(forKey: "opacity") as? Double ?? 0.8
+        theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
         widthFraction = d.object(forKey: "widthFraction") as? Double ?? 0.6
         heightFraction = d.object(forKey: "heightFraction") as? Double ?? 0.45
         sourceLanguage = d.string(forKey: "sourceLanguage") ?? ""

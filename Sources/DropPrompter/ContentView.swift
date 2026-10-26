@@ -86,6 +86,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             TextEditor(text: $settings.currentText)
                 .font(.system(size: settings.fontSize))
+                .foregroundStyle(settings.theme.textColor ?? .primary)
                 .lineSpacing(4)
                 .scrollContentBackground(.hidden)
                 .padding(12)
@@ -124,6 +125,19 @@ struct ContentView: View {
             Slider(value: $settings.opacity, in: 0.1...1)
                 .frame(width: 110)
                 .help("Background opacity")
+
+            Menu {
+                Picker("Theme", selection: $settings.theme) {
+                    ForEach(Theme.allCases) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Image(systemName: "paintpalette")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Theme")
 
             Spacer()
 
@@ -236,7 +250,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        .background(Capsule().fill(Color.white.opacity(isSelected ? 0.18 : 0.06)))
+        .background(Capsule().fill(Color.primary.opacity(isSelected ? 0.16 : 0.06)))
         .contextMenu {
             Button("Rename…") { startRename(card, index: index) }
             if card.name != nil {
@@ -309,6 +323,7 @@ struct ContentView: View {
                 }
                 Text(translation)
                     .font(.system(size: settings.fontSize))
+                    .foregroundStyle(settings.theme.textColor ?? .primary)
                     .lineSpacing(4)
                     .textSelection(.enabled)
             }
@@ -397,6 +412,12 @@ struct SettingsPopover: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+            Section("Appearance") {
+                Picker("Theme", selection: $settings.theme) {
+                    ForEach(Theme.allCases) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.segmented)
             }
             Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)

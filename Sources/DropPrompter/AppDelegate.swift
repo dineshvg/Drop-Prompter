@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = Settings.shared
     private let panel = PromptPanel.make()
     private let background = NSVisualEffectView()
+    /// Color over the blur for themes that tint it (Paper).
+    private let tintView = NSView()
     private var statusItem: NSStatusItem!
     private var toggleItem: NSMenuItem?
     private var hotKey: HotKey?
@@ -38,8 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in self?.registerHotKey() }
             .store(in: &subscriptions)
 
-        settings.$opacity
-            .sink { [weak self] in self?.background.alphaValue = $0 }
+        settings.$theme.combineLatest(settings.$opacity)
+            .sink { [weak self] theme, opacity in self?.apply(theme, opacity: opacity) }
             .store(in: &subscriptions)
         settings.$hideFromScreenShare
             .sink { [weak self] in self?.panel.sharingType = $0 ? .none : .readOnly }
@@ -112,7 +114,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildPanel() {
         let container = NSView()
-        background.material = .hudWindow
         background.blendingMode = .behindWindow
         background.state = .active
         background.maskImage = bottomRoundedMask(radius: 14)
@@ -124,7 +125,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         content.sizingOptions = []
 
-        for view in [background, content] as [NSView] {
+        tintView.wantsLayer = true
+        tintView.layer?.cornerRadius = 14
+        tintView.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner] // bottom corners only
+
+        for view in [background, tintView, content] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(view)
             NSLayoutConstraint.activate([
@@ -156,6 +161,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             cornerHandle.heightAnchor.constraint(equalToConstant: 22),
         ])
         panel.contentView = container
+    }
+
+    /// Colors the whole panel. Opacity applies to the blur and tint only, so text stays fully readable.
+    private func apply(_ theme: Theme, opacity: Double) {
+        panel.appearance = theme.appearance
+        background.material = theme.material
+        background.alphaValue = opacity
+        tintView.layer?.backgroundColor = theme.tint?.cgColor
+        tintView.alphaValue = opacity
+        TerminalSessions.shared.apply(theme)
     }
 
     /// Hidden main menu so ⌘C/⌘V/⌘Z also work in the settings popover.

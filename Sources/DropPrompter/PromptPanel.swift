@@ -26,7 +26,7 @@ final class PromptPanel: NSPanel {
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
         animationBehavior = .none
-        appearance = NSAppearance(named: .darkAqua)
+        appearance = NSAppearance(named: .darkAqua) // replaced by the theme once settings are applied
     }
 
     override var canBecomeKey: Bool { true }

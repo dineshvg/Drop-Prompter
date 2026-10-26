@@ -28,6 +28,12 @@ final class TerminalSessions: ObservableObject {
     }
 
     private var sessions: [UUID: TerminalSession] = [:]
+    private(set) var theme: Theme = .dark
+
+    func apply(_ theme: Theme) {
+        self.theme = theme
+        sessions.values.forEach { $0.apply(theme) }
+    }
 
     func view(for cardID: UUID) -> ActivityTerminalView {
         if let session = sessions[cardID] { return session.view }
@@ -81,9 +87,7 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         super.init()
         view.processDelegate = self
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        view.nativeForegroundColor = .white
-        view.nativeBackgroundColor = .black
-        view.backgroundOpacity = 0.35
+        apply(owner.theme)
         // Keep ⌥ for typing characters such as @ { } [ ] on German and other layouts.
         view.optionAsMetaKey = false
         view.onOutput = { [weak self] in
@@ -91,6 +95,12 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
             self.owner?.outputArrived(self.cardID)
         }
         startShell()
+    }
+
+    func apply(_ theme: Theme) {
+        view.nativeForegroundColor = theme.terminalForeground
+        view.nativeBackgroundColor = theme.terminalBackground
+        view.backgroundOpacity = theme.terminalBackgroundOpacity
     }
 
     func close() {

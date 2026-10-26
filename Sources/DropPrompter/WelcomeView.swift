@@ -35,6 +35,7 @@ struct WelcomeView: View {
         ("apple.terminal", "Terminal cards run your shell inside the panel. Their tab shows the title the running "
             + "program sets, such as Claude Code or Copilot CLI status, and a dot when there's new output."),
         ("circle.lefthalf.filled", "The slider changes how see-through the background is."),
+        ("paintpalette", "Themes: Dark, Light or Paper (a warm, yellowish tone) from the palette button or ⚙︎."),
         ("arrow.up.left.and.arrow.down.right", "Drag the bottom grip or corner to resize the panel."),
         ("gearshape", "Settings: change the shortcut, launch at login, panel size, hide from screen sharing."),
         ("square.and.arrow.down", "Everything is saved automatically, also across restarts."),
@@ -62,7 +63,7 @@ struct WelcomeView: View {
                                     .font(.system(.body, design: .monospaced).weight(.semibold))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.12)))
+                                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.1)))
                                 Text(shortcut.action)
                             }
                         }
