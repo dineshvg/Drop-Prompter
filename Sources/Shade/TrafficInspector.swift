@@ -45,9 +45,34 @@ final class TrafficInspector: ObservableObject {
     /// store (curl, git, Python).
     static var certificateBundle: URL { directory.appendingPathComponent("ca-bundle.pem") }
 
+    /// Finds mitmweb from Homebrew, pipx or uv (~/.local/bin), `pip install --user`, or the login shell's PATH.
     static var mitmwebPath: String? {
-        ["/opt/homebrew/bin/mitmweb", "/usr/local/bin/mitmweb", NSHomeDirectory() + "/.local/bin/mitmweb"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        let fileManager = FileManager.default
+        let home = NSHomeDirectory()
+        var candidates = ["/opt/homebrew/bin/mitmweb", "/usr/local/bin/mitmweb", home + "/.local/bin/mitmweb"]
+        let userPython = home + "/Library/Python"
+        for version in ((try? fileManager.contentsOfDirectory(atPath: userPython)) ?? []).sorted().reversed() {
+            candidates.append("\(userPython)/\(version)/bin/mitmweb")
+        }
+        if let found = candidates.first(where: { fileManager.isExecutableFile(atPath: $0) }) { return found }
+        return loginShellLookup("mitmweb")
+    }
+
+    /// `command -v` in the user's login shell: apps started from Finder don't see the PATH set in .zshrc.
+    private static func loginShellLookup(_ command: String) -> String? {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shell)
+        process.arguments = ["-l", "-i", "-c", "command -v \(command)"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let path = String(decoding: data, as: UTF8.self)
+            .split(separator: "\n").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        return path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
 
     // MARK: - Use
@@ -103,7 +128,8 @@ final class TrafficInspector: ObservableObject {
 
     private func start() async -> Bool {
         guard let mitmweb = Self.mitmwebPath else {
-            state = .failed("mitmproxy isn't installed. Install it with “brew install mitmproxy”, then open a new card.")
+            state = .failed("mitmproxy isn't installed. Install it with “pipx install mitmproxy” "
+                + "(or “brew install mitmproxy”), then open a new card.")
             return false
         }
         state = .starting
