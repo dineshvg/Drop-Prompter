@@ -2,18 +2,31 @@
 
 A personal macOS menu-bar tool: a translucent notes panel that slides down from the top of the screen
 (like iTerm2's hotkey window). Paste talking points before a meeting, toggle it with a hotkey, and
-optionally show an on-device translation side by side.
+optionally show an on-device translation side by side. Terminal cards run your shell right inside the panel.
 
 ## Features
 
 - A welcome screen explains the app and its shortcuts the first time the panel opens. Open it again with **?**
   in the toolbar or **Welcome & Shortcuts** in the menu bar icon.
-
-- **⌃Space** toggles the panel from any app, including full-screen apps and every Space. **Esc** hides it.
+- **⌃Space** (configurable) toggles the panel from any app, including full-screen apps and every Space.
+  **Esc** hides it.
 - Translucent blurred background with an opacity slider; the text itself stays fully opaque.
-- **Cards**: keep several notes side by side as tabs. **+** (⌘T) adds a card, **⌘1…⌘9** switches, **×** closes
-  (it asks first if the card has text). Each card's tab shows its first line. Everything is saved automatically.
-- **Resize** by dragging the grip at the bottom edge (height) or the bottom-right corner (width and height).
+- **Cards**: keep several notes side by side as tabs. **+** (⌘T) adds a notes card, **⌘1…⌘9** switches, **×** closes
+  (it asks first if the card has text). A card's tab shows its first line, or the name you give it: double-click
+  the tab, or right-click › Rename (an empty name goes back to the automatic title). Everything is saved
+  automatically.
+- **Terminal cards** (⇧⌘T, or the terminal button next to **+**) run your login shell inside the panel, starting in
+  your home folder. Each card has its own shell, which keeps running while the panel is hidden or another card is
+  shown.
+  - The tab shows the title the running program sets, so tools like Claude Code or Copilot CLI can show their
+    status and progress there. A name you give the card takes precedence.
+  - A dot on the tab means new output arrived while the card wasn't on screen.
+  - Closing a terminal card asks first and names the program that would be stopped (for example `claude`).
+    Quitting the app does the same while anything is still running.
+  - Shells don't survive quitting the app or a restart; the cards do, and start a fresh shell.
+  - Esc goes to the terminal (for vim and others) instead of hiding the panel; use the shortcut to hide it.
+- **Resize** by dragging the grip in the middle of the bottom edge (height) or the bottom-right corner (width and
+  height).
   The panel stays centered under the menu bar and remembers its size.
 - Font size −/+, panel width/height in ⚙︎.
 - **Translate** shows a live translation next to your text, line by line, using Apple's on-device
@@ -44,14 +57,15 @@ The first time you translate a language pair, macOS asks to download it. Downloa
 System Settings › General › Language & Region › Translation Languages. Apple's Translation supports fewer
 languages than Google Translate; the toolbar lists a subset that it supports.
 
-## Changing the hotkey
+## Changing the shortcut
 
-⌃Space is also the macOS default for "Select the previous input source". If you use more than one keyboard
-layout, turn that off in System Settings › Keyboard › Keyboard Shortcuts › Input Sources, or pick another key.
+Pick another show/hide shortcut in ⚙︎ › Shortcut (⌃Space, ⌃⇧Space, ⌃⌥Space, ⌃\` or ⌥\`). The app checks whether
+the combination is free:
 
-Edit `AppDelegate.swift`: `HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey))`.
-Key codes are the `kVK_*` constants in `Carbon.HIToolbox`; modifiers are `cmdKey`, `optionKey`,
-`controlKey`, `shiftKey`.
+- **Used by another app**: it can't be registered; pick another one.
+- **Also a macOS shortcut**: macOS takes it first and the app never sees it. ⌃Space is "Select the previous input
+  source" by default. Turn it off in System Settings › Keyboard › Keyboard Shortcuts › Input Sources, or pick
+  another shortcut. A banner in the panel tells you when this applies.
 
 ## License
 

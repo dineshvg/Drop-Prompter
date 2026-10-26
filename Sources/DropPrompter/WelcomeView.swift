@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Shown inside the panel the first time it opens, and again from the ? button or the menu bar icon.
 struct WelcomeView: View {
+    let hotKeyLabel: String
     let onDone: () -> Void
 
     private struct Shortcut: Identifiable {
@@ -16,20 +17,26 @@ struct WelcomeView: View {
         var id: String { text }
     }
 
-    private let shortcuts: [Shortcut] = [
-        ("⌃Space", "Show or hide the panel, from any app"),
-        ("Esc", "Hide the panel"),
-        ("⌘T", "New card"),
-        ("⌘1 … ⌘9", "Switch between cards"),
-        ("⌘V  ⌘C  ⌘Z", "Paste, copy, undo"),
-    ].map { Shortcut(keys: $0.0, action: $0.1) }
+    private var shortcuts: [Shortcut] {
+        [
+            (hotKeyLabel, "Show or hide the panel, from any app"),
+            ("Esc", "Hide the panel"),
+            ("⌘T", "New notes card"),
+            ("⇧⌘T", "New terminal card"),
+            ("⌘1 … ⌘9", "Switch between cards"),
+            ("⌘V  ⌘C  ⌘Z", "Paste, copy, undo"),
+        ].map { Shortcut(keys: $0.0, action: $0.1) }
+    }
 
     private let tips: [Tip] = [
-        ("rectangle.stack", "Cards: keep a note per meeting or topic. + adds one, × closes it."),
+        ("rectangle.stack", "Cards: keep a note per meeting or topic. + adds one, × closes it. "
+            + "Double-click a card (or right-click › Rename) to give it your own name."),
         ("character.bubble", "Translate: shows a translation next to your text, on-device with Apple Translation."),
+        ("apple.terminal", "Terminal cards run your shell inside the panel. Their tab shows the title the running "
+            + "program sets, such as Claude Code or Copilot CLI status, and a dot when there's new output."),
         ("circle.lefthalf.filled", "The slider changes how see-through the background is."),
         ("arrow.up.left.and.arrow.down.right", "Drag the bottom grip or corner to resize the panel."),
-        ("gearshape", "Settings: launch at login, panel size, hide from screen sharing."),
+        ("gearshape", "Settings: change the shortcut, launch at login, panel size, hide from screen sharing."),
         ("square.and.arrow.down", "Everything is saved automatically, also across restarts."),
     ].map { Tip(icon: $0.0, text: $0.1) }
 

@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Combine
+import SwiftTerm
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -8,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let panel = PromptPanel.make()
     private let background = NSVisualEffectView()
     private var statusItem: NSStatusItem!
+    private var toggleItem: NSMenuItem?
     private var hotKey: HotKey?
     private var escapeMonitor: Any?
     private var subscriptions = Set<AnyCancellable>()
@@ -21,16 +23,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMainMenu()
         buildStatusItem()
 
-        // ⌃Space toggles the panel from anywhere.
-        hotKey = HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey)) { [weak self] in
-            self?.toggle()
-        }
-
+        // Esc hides the panel, except in a terminal (programs like vim need it) or while renaming a card.
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.keyCode == UInt16(kVK_Escape), self.panel.isKeyWindow else { return event }
+            guard let self, event.keyCode == UInt16(kVK_Escape), self.panel.isKeyWindow,
+                  !(self.panel.firstResponder is TerminalView),
+                  (self.panel.firstResponder as? NSTextView)?.isFieldEditor != true else { return event }
             self.hide()
             return nil
         }
+
+        // Registers the show/hide shortcut now and again whenever it's changed in Settings.
+        settings.$hotKeyID
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.registerHotKey() }
+            .store(in: &subscriptions)
 
         settings.$opacity
             .sink { [weak self] in self?.background.alphaValue = $0 }
@@ -53,12 +59,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !Self.launchedAsLoginItem { show() }
     }
 
+    private func registerHotKey() {
+        let preset = settings.hotKey
+        hotKey = nil // unregister the old combination first
+        let newHotKey = HotKey(keyCode: preset.keyCode, modifiers: preset.carbonModifiers) { [weak self] in
+            self?.toggle()
+        }
+        hotKey = newHotKey
+
+        if !newHotKey.isRegistered {
+            settings.hotKeyProblem = "\(preset.label) is already used by another app, so it can't show the panel. "
+                + "Pick another shortcut in ⚙︎."
+        } else if SystemShortcuts.isTaken(keyCode: preset.keyCode, modifiers: preset.cocoaModifiers) {
+            settings.hotKeyProblem = "macOS also uses \(preset.label) (for example to switch keyboard input source) "
+                + "and takes it first. Turn that off in System Settings › Keyboard › Keyboard Shortcuts, "
+                + "or pick another shortcut in ⚙︎."
+        } else {
+            settings.hotKeyProblem = nil
+        }
+        toggleItem?.title = "Show / Hide   \(preset.label)"
+    }
+
     /// True when macOS opened the app as a login item (the "oapp" event carries a launched-as-login-item marker).
     private static var launchedAsLoginItem: Bool {
         guard let event = NSAppleEventManager.shared().currentAppleEvent,
               event.eventID == AEEventID(kAEOpenApplication) else { return false }
         return event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
             == OSType(keyAELaunchedAsLogInItem)
+    }
+
+    /// Quitting stops every shell, so ask first while a program is still running in a terminal card.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let running = TerminalSessions.shared.runningPrograms
+        guard !running.isEmpty else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Quit while programs are running?"
+        alert.informativeText = "Quitting Drop Prompter stops what's running in its terminal cards: "
+            + running.map { "“\($0)”" }.joined(separator: ", ") + "."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     /// Opening the app again (Finder, Spotlight, Dock) while it's running brings the panel down.
@@ -76,14 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         background.state = .active
         background.maskImage = bottomRoundedMask(radius: 14)
 
-        let resizer = PanelResizer(
-            begin: { [weak self] in self?.beginResize() },
-            update: { [weak self] in self?.updateResize(includeWidth: $0) },
-            end: { [weak self] in self?.endResize() }
-        )
         let content = NSHostingView(rootView: ContentView(
             settings: settings,
-            resizer: resizer,
+            terminals: TerminalSessions.shared,
             onClose: { [weak self] in self?.hide() }
         ))
         content.sizingOptions = []
@@ -98,6 +134,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             ])
         }
+
+        // Resize grips sit above the SwiftUI content, along the bottom edge.
+        let bottomHandle = ResizeHandleView(kind: .bottom)
+        let cornerHandle = ResizeHandleView(kind: .corner)
+        for handle in [bottomHandle, cornerHandle] {
+            handle.onBegin = { [weak self] in self?.beginResize() }
+            handle.onDrag = { [weak self] in self?.updateResize(includeWidth: $0) }
+            handle.onEnd = { [weak self] in self?.endResize() }
+            handle.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(handle)
+        }
+        NSLayoutConstraint.activate([
+            bottomHandle.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            bottomHandle.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            bottomHandle.widthAnchor.constraint(equalToConstant: 140),
+            bottomHandle.heightAnchor.constraint(equalToConstant: 14),
+            cornerHandle.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            cornerHandle.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            cornerHandle.widthAnchor.constraint(equalToConstant: 22),
+            cornerHandle.heightAnchor.constraint(equalToConstant: 22),
+        ])
         panel.contentView = container
     }
 
@@ -123,8 +180,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Drop Prompter")
         let menu = NSMenu()
-        let toggleItem = menu.addItem(withTitle: "Show / Hide   ⌃Space", action: #selector(toggle), keyEquivalent: "")
+        let toggleItem = menu.addItem(withTitle: "Show / Hide   \(settings.hotKey.label)",
+                                      action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
+        self.toggleItem = toggleItem
         let welcomeItem = menu.addItem(withTitle: "Welcome & Shortcuts", action: #selector(showWelcome), keyEquivalent: "")
         welcomeItem.target = self
         menu.addItem(.separator())

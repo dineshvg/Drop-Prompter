@@ -17,6 +17,11 @@ final class Settings: ObservableObject {
     @Published var targetLanguage: String { didSet { save(targetLanguage, "targetLanguage") } }
     @Published var showTranslation: Bool { didSet { save(showTranslation, "showTranslation") } }
     @Published var hideFromScreenShare: Bool { didSet { save(hideFromScreenShare, "hideFromScreenShare") } }
+    @Published var hotKeyID: String { didSet { save(hotKeyID, "hotKeyID") } }
+    /// Set by the app delegate after registering the shortcut; nil when nothing is in the way.
+    @Published var hotKeyProblem: String? = nil
+    /// The shortcut whose warning the user dismissed, so the banner doesn't nag about it again.
+    @Published var dismissedHotKeyWarning: String { didSet { save(dismissedHotKeyWarning, "dismissedHotKeyWarning") } }
     /// Whether the welcome screen is showing. Starts true until the user has dismissed it once.
     @Published var showWelcome: Bool { didSet { if !showWelcome { save(true, "hasSeenWelcome") } } }
 
@@ -42,6 +47,12 @@ final class Settings: ObservableObject {
         showTranslation = d.object(forKey: "showTranslation") as? Bool ?? false
         hideFromScreenShare = d.object(forKey: "hideFromScreenShare") as? Bool ?? true
         showWelcome = !d.bool(forKey: "hasSeenWelcome")
+        hotKeyID = d.string(forKey: "hotKeyID") ?? HotKeyPreset.all[0].id
+        dismissedHotKeyWarning = d.string(forKey: "dismissedHotKeyWarning") ?? ""
+    }
+
+    var hotKey: HotKeyPreset {
+        HotKeyPreset.all.first { $0.id == hotKeyID } ?? HotKeyPreset.all[0]
     }
 
     private func save(_ value: Any, _ key: String) {
@@ -62,16 +73,45 @@ final class Settings: ObservableObject {
     // MARK: - Cards
 
     struct Card: Codable, Identifiable, Equatable {
+        enum Kind: String, Codable { case notes, terminal }
+
         var id = UUID()
+        var kind: Kind
+        /// Name the user gave the card; nil shows an automatic title.
+        var name: String?
         var text: String
 
-        /// First non-empty line, shortened; used as the card's tab label.
-        func title(fallback: String) -> String {
-            let line = text.split(separator: "\n").lazy
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .first { !$0.isEmpty }
-            guard let line else { return fallback }
-            return line.count > 22 ? String(line.prefix(21)) + "…" : line
+        init(kind: Kind = .notes, text: String = "") {
+            self.kind = kind
+            self.text = text
+        }
+
+        /// Cards saved before `kind` and `name` existed load as notes cards.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            kind = try container.decodeIfPresent(Kind.self, forKey: .kind) ?? .notes
+            name = try container.decodeIfPresent(String.self, forKey: .name)
+            text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        }
+
+        /// Tab label: the user's name if set; otherwise the running program's title for terminals,
+        /// or the first non-empty line for notes.
+        func title(fallback: String, terminalTitle: String?) -> String {
+            if let name, !name.isEmpty { return name }
+            switch kind {
+            case .terminal:
+                return Self.shortened(terminalTitle ?? "Terminal", limit: 32)
+            case .notes:
+                let line = text.split(separator: "\n").lazy
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .first { !$0.isEmpty }
+                return line.map { Self.shortened($0, limit: 22) } ?? fallback
+            }
+        }
+
+        private static func shortened(_ text: String, limit: Int) -> String {
+            text.count > limit ? String(text.prefix(limit - 1)) + "…" : text
         }
     }
 
@@ -79,16 +119,25 @@ final class Settings: ObservableObject {
         cards.firstIndex { $0.id == selectedCardID } ?? 0
     }
 
+    var currentCard: Card { cards[selectedIndex] }
+
     /// Text of the selected card.
     var currentText: String {
         get { cards[selectedIndex].text }
         set { cards[selectedIndex].text = newValue }
     }
 
-    func addCard() {
-        let card = Card(text: "")
+    func addCard(kind: Card.Kind = .notes) {
+        let card = Card(kind: kind)
         cards.append(card)
         selectedCardID = card.id
+    }
+
+    /// An empty name switches back to the automatic title.
+    func rename(_ id: UUID, to name: String) {
+        guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        cards[index].name = trimmed.isEmpty ? nil : trimmed
     }
 
     func removeCard(_ id: UUID) {

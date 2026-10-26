@@ -3,26 +3,27 @@ import ServiceManagement
 import SwiftUI
 import Translation
 
-/// Hooks the SwiftUI resize handles up to the panel, which AppKit owns.
-struct PanelResizer {
-    let begin: () -> Void
-    let update: (_ includeWidth: Bool) -> Void
-    let end: () -> Void
-}
-
 struct ContentView: View {
     @ObservedObject var settings: Settings
-    let resizer: PanelResizer
+    @ObservedObject var terminals: TerminalSessions
     let onClose: () -> Void
 
     @State private var translation = ""
     @State private var translationError: String?
     @State private var isTranslating = false
     @State private var showSettings = false
-    @State private var isResizing = false
-    @State private var cardPendingRemoval: UUID?
+    @State private var pendingRemoval: PendingRemoval?
+    @State private var renamingCardID: UUID?
+    @State private var renameText = ""
+    @FocusState private var renameFieldFocused: Bool
     /// Setting or invalidating this makes `.translationTask` run with a fresh session.
     @State private var translationConfig: TranslationSession.Configuration?
+
+    private struct PendingRemoval {
+        let cardID: UUID
+        let title: String
+        let message: String
+    }
 
     private struct TranslationRequest: Equatable {
         let text: String
@@ -36,28 +37,33 @@ struct ContentView: View {
             toolbar
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
+            if let problem = settings.hotKeyProblem, settings.dismissedHotKeyWarning != settings.hotKeyID {
+                hotKeyBanner(problem)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
+            }
             cardStrip
                 .padding(.horizontal, 14)
                 .padding(.bottom, 6)
             Divider().opacity(0.4)
-            HStack(spacing: 0) {
-                TextEditor(text: $settings.currentText)
-                    .font(.system(size: settings.fontSize))
-                    .lineSpacing(4)
-                    .scrollContentBackground(.hidden)
-                    .padding(12)
-                    .id(settings.selectedCardID) // fresh undo history and scroll position per card
-                if settings.showTranslation {
-                    Divider().opacity(0.4)
-                    translationPane
-                }
+            if settings.currentCard.kind == .terminal {
+                TerminalPane(sessions: terminals, cardID: settings.selectedCardID)
+                    .id(settings.selectedCardID)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+            } else {
+                editorRow
             }
-            resizeBar
+            // Room for the AppKit resize grips along the bottom edge (see ResizeHandleView).
+            Color.clear.frame(height: 14)
         }
         .overlay {
             if settings.showWelcome {
-                WelcomeView { settings.showWelcome = false }
+                WelcomeView(hotKeyLabel: settings.hotKey.label) { settings.showWelcome = false }
             }
+        }
+        .onChange(of: settings.selectedCardID, initial: true) { _, id in
+            terminals.visibleCardID = id
         }
         .task(id: translationRequest) {
             await scheduleTranslation(translationRequest)
@@ -74,6 +80,35 @@ struct ContentView: View {
             target: settings.targetLanguage,
             enabled: settings.showTranslation
         )
+    }
+
+    private var editorRow: some View {
+        HStack(spacing: 0) {
+            TextEditor(text: $settings.currentText)
+                .font(.system(size: settings.fontSize))
+                .lineSpacing(4)
+                .scrollContentBackground(.hidden)
+                .padding(12)
+                .id(settings.selectedCardID) // fresh undo history and scroll position per card
+            if settings.showTranslation {
+                Divider().opacity(0.4)
+                translationPane
+            }
+        }
+    }
+
+    private func hotKeyBanner(_ problem: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            Text(problem)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Change") { showSettings = true }
+            Button("Dismiss") { settings.dismissedHotKeyWarning = settings.hotKeyID }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.yellow.opacity(0.12)))
     }
 
     // MARK: - Toolbar
@@ -138,31 +173,59 @@ struct ContentView: View {
                 Button { settings.addCard() } label: { Image(systemName: "plus") }
                     .buttonStyle(.borderless)
                     .keyboardShortcut("t", modifiers: .command)
-                    .help("New card (⌘T)")
+                    .help("New notes card (⌘T)")
+                Button { settings.addCard(kind: .terminal) } label: { Image(systemName: "apple.terminal") }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                    .help("New terminal card (⇧⌘T)")
             }
         }
-        .confirmationDialog(
-            "Delete this card and its text?",
-            isPresented: Binding(get: { cardPendingRemoval != nil }, set: { if !$0 { cardPendingRemoval = nil } })
-        ) {
-            Button("Delete Card", role: .destructive) {
-                if let id = cardPendingRemoval { settings.removeCard(id) }
-            }
+        .alert(
+            pendingRemoval?.title ?? "",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            presenting: pendingRemoval
+        ) { removal in
+            Button("Close Card", role: .destructive) { removeCard(removal.cardID) }
+            Button("Cancel", role: .cancel) {}
+        } message: { removal in
+            Text(removal.message)
         }
     }
 
     private func cardChip(_ card: Settings.Card, index: Int) -> some View {
         let isSelected = card.id == settings.selectedCardID
         return HStack(spacing: 6) {
-            Button { settings.selectedCardID = card.id } label: {
-                Text(card.title(fallback: "Card \(index + 1)"))
-                    .lineLimit(1)
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            if card.kind == .terminal {
+                Image(systemName: "apple.terminal").font(.system(size: 10))
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command) : nil)
-            .help(index < 9 ? "⌘\(index + 1)" : "")
-            if isSelected && settings.cards.count > 1 {
+            if renamingCardID == card.id {
+                TextField("Card name", text: $renameText)
+                    .textFieldStyle(.plain)
+                    .frame(width: 150)
+                    .focused($renameFieldFocused)
+                    .onAppear { renameFieldFocused = true }
+                    .onSubmit(commitRename)
+                    .onExitCommand { renamingCardID = nil }
+                    .onChange(of: renameFieldFocused) { _, focused in
+                        if !focused { commitRename() }
+                    }
+            } else {
+                Button { settings.selectedCardID = card.id } label: {
+                    Text(card.title(fallback: "Card \(index + 1)", terminalTitle: terminals.titles[card.id]))
+                        .lineLimit(1)
+                        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command) : nil)
+                .simultaneousGesture(TapGesture(count: 2).onEnded { startRename(card, index: index) })
+                .help(index < 9 ? "⌘\(index + 1) · double-click to rename" : "Double-click to rename")
+            }
+            if terminals.unseenOutput.contains(card.id) {
+                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                    .help("New output")
+            }
+            if isSelected && settings.cards.count > 1 && renamingCardID != card.id {
                 Button { requestRemoval(of: card) } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                 }
@@ -174,59 +237,64 @@ struct ContentView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(Capsule().fill(Color.white.opacity(isSelected ? 0.18 : 0.06)))
+        .contextMenu {
+            Button("Rename…") { startRename(card, index: index) }
+            if card.name != nil {
+                Button("Use Automatic Title") { settings.rename(card.id, to: "") }
+            }
+            if settings.cards.count > 1 {
+                Divider()
+                Button("Close Card") { requestRemoval(of: card) }
+            }
+        }
     }
 
-    /// Empty cards close right away; cards with text ask first.
+    private func startRename(_ card: Settings.Card, index: Int) {
+        settings.selectedCardID = card.id
+        renameText = card.name ?? card.title(fallback: "Card \(index + 1)", terminalTitle: terminals.titles[card.id])
+        renamingCardID = card.id
+    }
+
+    private func commitRename() {
+        guard let id = renamingCardID else { return }
+        settings.rename(id, to: renameText)
+        renamingCardID = nil
+    }
+
+    /// Empty notes cards close right away. Notes with text and terminals ask first; a terminal says
+    /// which program would be stopped.
     private func requestRemoval(of card: Settings.Card) {
-        if card.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            settings.removeCard(card.id)
-        } else {
-            cardPendingRemoval = card.id
+        switch card.kind {
+        case .terminal:
+            if let program = terminals.runningProgram(in: card.id) {
+                pendingRemoval = PendingRemoval(
+                    cardID: card.id,
+                    title: "Close terminal while “\(program)” is running?",
+                    message: "Closing this card stops “\(program)” and anything else running in it."
+                )
+            } else {
+                pendingRemoval = PendingRemoval(
+                    cardID: card.id,
+                    title: "Close this terminal card?",
+                    message: "The shell running in it will be closed."
+                )
+            }
+        case .notes:
+            if card.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                removeCard(card.id)
+            } else {
+                pendingRemoval = PendingRemoval(
+                    cardID: card.id,
+                    title: "Delete this card?",
+                    message: "Its text will be deleted."
+                )
+            }
         }
     }
 
-    // MARK: - Resize
-
-    /// Bottom edge: the centre grip changes the height, the corner grip changes width and height.
-    private var resizeBar: some View {
-        ZStack {
-            Capsule()
-                .fill(Color.white.opacity(isResizing ? 0.5 : 0.25))
-                .frame(width: 44, height: 5)
-                .frame(width: 120, height: 14)
-                .contentShape(Rectangle())
-                .gesture(resizeGesture(includeWidth: false))
-                .onHover { $0 ? NSCursor.resizeUpDown.push() : NSCursor.pop() }
-            HStack {
-                Spacer()
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 14)
-                    .contentShape(Rectangle())
-                    .gesture(resizeGesture(includeWidth: true))
-                    .onHover { $0 ? NSCursor.crosshair.push() : NSCursor.pop() }
-                    .help("Drag to resize")
-            }
-            .padding(.trailing, 6)
-        }
-        .frame(height: 14)
-        .padding(.bottom, 2)
-    }
-
-    private func resizeGesture(includeWidth: Bool) -> some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { _ in
-                if !isResizing {
-                    isResizing = true
-                    resizer.begin()
-                }
-                resizer.update(includeWidth)
-            }
-            .onEnded { _ in
-                isResizing = false
-                resizer.end()
-            }
+    private func removeCard(_ id: UUID) {
+        terminals.close(id) // no-op for notes cards
+        settings.removeCard(id)
     }
 
     // MARK: - Translation
@@ -311,6 +379,25 @@ struct SettingsPopover: View {
 
     var body: some View {
         Form {
+            Section("Shortcut") {
+                Picker("Show / hide panel", selection: $settings.hotKeyID) {
+                    ForEach(HotKeyPreset.all) { Text($0.label).tag($0.id) }
+                }
+                if let problem = settings.hotKeyProblem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Button("Open Keyboard Shortcuts Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                } else {
+                    Text("Works from any app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in setLaunchAtLogin(enabled) }
