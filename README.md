@@ -59,7 +59,11 @@ other command in a terminal card without switching windows.
 When a terminal card's shell is inside a git repository, Drop Prompter notices and shows a slim repo bar: the
 branch and how many files changed, updated as commands run. It's built for watching Claude Code or Copilot CLI
 work without switching to your IDE.
-- **Changes (⇧⌘G)** lists `git status` next to the terminal. Click a file to see its diff, colored and read-only.
+- **Repository sidebar (⌘B)**, pinned on the left or right as you like, with two tabs: **Changes** (`git status`)
+  and **Files** (a folder tree with a filter). It stays visible while you switch cards. Click a file to open it as
+  a card; the sidebar highlights the file you're looking at.
+- **File cards** show a changed file's **diff** (green and red, read-only) or the **whole file**, and refresh by
+  themselves when the file changes on disk, so you can watch an agent edit it.
 - **Quick Open (⌘P)**: type part of a file name and open the file as a viewer card next to your notes.
 - **Open in your editor**: one click hands a file or the whole repository to VS Code, Android Studio, Xcode or
   your default app (choose in ⚙︎ › Code).
@@ -84,7 +88,7 @@ work without switching to your IDE.
 | **⇧⌘T** | New terminal card |
 | **⌘1 … ⌘9** | Switch to card 1 … 9 |
 | **⌘P** | Open a file from the terminal card's git repository |
-| **⇧⌘G** | Show or hide the repository's changes and diffs |
+| **⌘B** | Show or hide the repository sidebar (changes and files) |
 | **⌘C ⌘V ⌘Z** | Copy, paste, undo |
 | Double-click a tab | Rename the card |
 

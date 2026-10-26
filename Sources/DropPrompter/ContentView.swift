@@ -13,8 +13,8 @@ struct ContentView: View {
     @State private var isTranslating = false
     @State private var showSettings = false
     @State private var pendingRemoval: PendingRemoval?
-    /// Changes pane next to a terminal card that's in a git repository.
-    @State private var showChanges = false
+    /// Status and files of the repository shown in the sidebar and file cards.
+    @StateObject private var repoWatcher = RepoWatcher()
     /// Repository root while Quick Open (⌘P) is showing.
     @State private var quickOpenRoot: URL?
     @State private var renamingCardID: UUID?
@@ -50,21 +50,12 @@ struct ContentView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 6)
             Divider().opacity(0.4)
-            switch settings.currentCard.kind {
-            case .notes:
-                editorRow
-            case .terminal:
-                terminalArea
-            case .file:
-                if let path = settings.currentCard.filePath {
-                    FileViewer(
-                        url: URL(fileURLWithPath: path),
-                        theme: settings.theme,
-                        codeSize: codeSize,
-                        editorBundleID: settings.editorBundleID
-                    )
-                    .id(settings.selectedCardID)
-                }
+            // The sidebar sits next to the card content, so it stays put while switching cards.
+            HSplitView {
+                if settings.showSidebar && !settings.sidebarOnRight { sidebar }
+                cardContent
+                    .frame(minWidth: 300, maxWidth: .infinity)
+                if settings.showSidebar && settings.sidebarOnRight { sidebar }
             }
             // Room for the AppKit resize grips along the bottom edge (see ResizeHandleView).
             Color.clear.frame(height: 14)
@@ -74,8 +65,8 @@ struct ContentView: View {
                 QuickOpenView(
                     root: root,
                     onOpen: { url in
+                        settings.openFileCard(url, repoRoot: root)
                         quickOpenRoot = nil
-                        settings.openFileCard(url)
                     },
                     onCancel: { quickOpenRoot = nil }
                 )
@@ -88,6 +79,13 @@ struct ContentView: View {
         }
         .onChange(of: settings.selectedCardID, initial: true) { _, id in
             terminals.visibleCardID = id
+        }
+        // Watch the repository only while something shows it: the sidebar or a file card.
+        .onChange(of: watchRequest, initial: true) { _, request in
+            repoWatcher.watch(request.isNeeded ? request.root : nil)
+            if let root = request.root, root.path != settings.lastRepoPath {
+                settings.lastRepoPath = root.path
+            }
         }
         .task(id: translationRequest) {
             await scheduleTranslation(translationRequest)
@@ -122,6 +120,65 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private var cardContent: some View {
+        let card = settings.currentCard
+        switch card.kind {
+        case .notes:
+            editorRow
+        case .terminal:
+            terminalArea
+        case .file:
+            if let path = card.filePath {
+                FileViewer(
+                    url: URL(fileURLWithPath: path),
+                    change: repoWatcher.change(forFileAt: path),
+                    repoRoot: card.repoRoot.map { URL(fileURLWithPath: $0, isDirectory: true) },
+                    theme: settings.theme,
+                    codeSize: codeSize,
+                    editorBundleID: settings.editorBundleID
+                )
+                .id(card.id)
+            }
+        }
+    }
+
+    private var sidebar: some View {
+        RepoSidebar(
+            watcher: repoWatcher,
+            openFilePath: settings.currentCard.kind == .file ? settings.currentCard.filePath : nil,
+            isOnRight: settings.sidebarOnRight,
+            onOpen: { settings.openFileCard($0, repoRoot: repoWatcher.root) },
+            onSwitchSide: { settings.sidebarOnRight.toggle() },
+            onHide: { settings.showSidebar = false }
+        )
+        .frame(minWidth: 200, idealWidth: 280, maxWidth: 480)
+    }
+
+    /// The repository of the current card: a terminal's shell directory or a file's repository. On a notes
+    /// card, the last one used.
+    private var activeRepoRoot: URL? {
+        let card = settings.currentCard
+        switch card.kind {
+        case .terminal:
+            if let root = terminals.repos[card.id]?.root { return root }
+        case .file:
+            if let path = card.repoRoot { return URL(fileURLWithPath: path, isDirectory: true) }
+        case .notes:
+            break
+        }
+        return settings.lastRepoPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    private struct WatchRequest: Equatable {
+        let root: URL?
+        let isNeeded: Bool
+    }
+
+    private var watchRequest: WatchRequest {
+        WatchRequest(root: activeRepoRoot, isNeeded: settings.showSidebar || settings.currentCard.kind == .file)
+    }
+
     /// Code in the file and diff viewers is smaller than notes text, but follows its size.
     private var codeSize: CGFloat {
         CGFloat(max(11, settings.fontSize * 0.65))
@@ -137,23 +194,10 @@ struct ContentView: View {
                 repoBar(repo)
                 Divider().opacity(0.4)
             }
-            HSplitView {
-                TerminalPane(sessions: terminals, cardID: cardID)
-                    .id(cardID)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 6)
-                    .frame(minWidth: 240)
-                if showChanges, let repo {
-                    ChangesPane(
-                        repo: repo,
-                        theme: settings.theme,
-                        codeSize: codeSize,
-                        editorBundleID: settings.editorBundleID,
-                        onOpenFile: { settings.openFileCard($0) }
-                    )
-                    .frame(minWidth: 240, idealWidth: 360)
-                }
-            }
+            TerminalPane(sessions: terminals, cardID: cardID)
+                .id(cardID)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
         }
     }
 
@@ -171,10 +215,8 @@ struct ContentView: View {
             Button { quickOpenRoot = repo.root } label: { Label("Open File", systemImage: "magnifyingglass") }
                 .keyboardShortcut("p", modifiers: .command)
                 .help("Quick Open a file in this repository (⌘P)")
-            Toggle(isOn: $showChanges) { Label("Changes", systemImage: "plusminus") }
-                .toggleStyle(.button)
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-                .help("Show or hide changes and diffs (⇧⌘G)")
+            Button { settings.showSidebar = true } label: { Label("Changes", systemImage: "plusminus") }
+                .help("Show changes and files in the sidebar (⌘B)")
             Button { CodeEditors.open(repo.root, with: settings.editorBundleID) } label: {
                 Image(systemName: "arrow.up.forward.app")
             }
@@ -215,6 +257,13 @@ struct ContentView: View {
             Slider(value: $settings.opacity, in: 0.1...1)
                 .frame(width: 110)
                 .help("Background opacity")
+
+            Toggle(isOn: $settings.showSidebar) {
+                Image(systemName: settings.sidebarOnRight ? "sidebar.right" : "sidebar.left")
+            }
+            .toggleStyle(.button)
+            .keyboardShortcut("b", modifiers: .command)
+            .help("Repository sidebar (⌘B)")
 
             Menu {
                 Picker("Theme", selection: $settings.theme) {

@@ -13,6 +13,11 @@ final class Settings: ObservableObject {
     @Published var theme: Theme { didSet { save(theme.rawValue, "theme") } }
     /// Bundle ID of the editor for "Open in…"; empty means the macOS default app.
     @Published var editorBundleID: String { didSet { save(editorBundleID, "editorBundleID") } }
+    /// Repository sidebar: pinned open or not, and on which side.
+    @Published var showSidebar: Bool { didSet { save(showSidebar, "showSidebar") } }
+    @Published var sidebarOnRight: Bool { didSet { save(sidebarOnRight, "sidebarOnRight") } }
+    /// Repository the sidebar shows while a notes card is selected.
+    @Published var lastRepoPath: String? { didSet { save(lastRepoPath ?? "", "lastRepoPath") } }
     @Published var widthFraction: Double { didSet { save(widthFraction, "widthFraction") } }
     @Published var heightFraction: Double { didSet { save(heightFraction, "heightFraction") } }
     /// Empty string means auto-detect.
@@ -45,6 +50,9 @@ final class Settings: ObservableObject {
         opacity = d.object(forKey: "opacity") as? Double ?? 0.8
         theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
         editorBundleID = d.string(forKey: "editorBundleID") ?? ""
+        showSidebar = d.bool(forKey: "showSidebar")
+        sidebarOnRight = d.bool(forKey: "sidebarOnRight")
+        lastRepoPath = d.string(forKey: "lastRepoPath").flatMap { $0.isEmpty ? nil : $0 }
         widthFraction = d.object(forKey: "widthFraction") as? Double ?? 0.6
         heightFraction = d.object(forKey: "heightFraction") as? Double ?? 0.45
         sourceLanguage = d.string(forKey: "sourceLanguage") ?? ""
@@ -87,11 +95,14 @@ final class Settings: ObservableObject {
         var text: String
         /// Absolute path of the file a `.file` card shows.
         var filePath: String?
+        /// Root of the git repository the file belongs to, for its diff and the sidebar.
+        var repoRoot: String?
 
-        init(kind: Kind = .notes, text: String = "", filePath: String? = nil) {
+        init(kind: Kind = .notes, text: String = "", filePath: String? = nil, repoRoot: String? = nil) {
             self.kind = kind
             self.text = text
             self.filePath = filePath
+            self.repoRoot = repoRoot
         }
 
         /// Cards saved before `kind` and `name` existed load as notes cards.
@@ -102,6 +113,7 @@ final class Settings: ObservableObject {
             name = try container.decodeIfPresent(String.self, forKey: .name)
             text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
             filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
+            repoRoot = try container.decodeIfPresent(String.self, forKey: .repoRoot)
         }
 
         /// Tab label: the user's name if set; otherwise the running program's title for terminals,
@@ -145,11 +157,11 @@ final class Settings: ObservableObject {
     }
 
     /// Shows a file in a viewer card, reusing the card if the file is already open.
-    func openFileCard(_ url: URL) {
+    func openFileCard(_ url: URL, repoRoot: URL?) {
         if let existing = cards.first(where: { $0.kind == .file && $0.filePath == url.path }) {
             selectedCardID = existing.id
         } else {
-            let card = Card(kind: .file, filePath: url.path)
+            let card = Card(kind: .file, filePath: url.path, repoRoot: repoRoot?.path)
             cards.append(card)
             selectedCardID = card.id
         }
