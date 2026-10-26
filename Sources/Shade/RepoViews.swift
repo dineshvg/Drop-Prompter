@@ -364,6 +364,11 @@ struct FileViewer: View {
     let theme: Theme
     let codeSize: CGFloat
     let editorBundleID: String
+    /// Language chosen for this card (nil: from the file name; `Card.plainText`: off).
+    let languageOverride: String?
+    let highlightingEnabled: Bool
+    let highlightTheme: String
+    let onSetLanguage: (String?) -> Void
     @ObservedObject var buffers: FileBuffers
 
     @State private var diff: NSAttributedString?
@@ -375,6 +380,16 @@ struct FileViewer: View {
     private var showsDiff: Bool { preferDiff && change != nil && repoRoot != nil }
     private var buffer: FileBuffers.Buffer? { buffers.buffers[cardID] }
     private var isDirty: Bool { buffer?.isDirty == true }
+
+    private var detectedLanguage: String? { SyntaxHighlighting.language(forFileAt: url.path) }
+
+    /// Language actually used for highlighting; nil shows plain text.
+    private var language: String? {
+        guard highlightingEnabled, languageOverride != Settings.Card.plainText,
+              (buffer?.text.utf8.count ?? 0) <= SyntaxHighlighting.maxHighlightedSize
+        else { return nil }
+        return languageOverride ?? detectedLanguage
+    }
 
     private struct LoadRequest: Equatable {
         let url: URL
@@ -448,6 +463,9 @@ struct FileViewer: View {
                 .labelsHidden()
                 .fixedSize()
             }
+            if !showsDiff, buffer != nil, highlightingEnabled {
+                languageMenu
+            }
             if !showsDiff, buffer != nil {
                 Button("Revert") { buffers.revert(cardID) }
                     .disabled(!isDirty && buffer?.changedOnDisk != true)
@@ -469,6 +487,24 @@ struct FileViewer: View {
         .buttonStyle(.borderless)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    private var languageMenu: some View {
+        Menu {
+            Button("Automatic (\(detectedLanguage ?? "Plain Text"))") { onSetLanguage(nil) }
+            Button("Plain Text") { onSetLanguage(Settings.Card.plainText) }
+            Divider()
+            ForEach(SyntaxHighlighting.shared.languages, id: \.self) { name in
+                Button(name) { onSetLanguage(name) }
+            }
+        } label: {
+            Text(language ?? "Plain Text")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help((buffer?.text.utf8.count ?? 0) > SyntaxHighlighting.maxHighlightedSize
+              ? "This file is too large to highlight"
+              : "Highlighting language")
     }
 
     private var diskChangedBanner: some View {
@@ -507,6 +543,7 @@ struct FileViewer: View {
                 text: buffer.text,
                 font: NSFont.monospacedSystemFont(ofSize: codeSize, weight: .regular),
                 color: theme.codeTextColor,
+                highlighting: language.map { CodeEditorView.Highlighting(language: $0, theme: highlightTheme) },
                 onChange: { buffers.update(cardID, text: $0) }
             )
         } else if let message = buffers.messages[cardID] {

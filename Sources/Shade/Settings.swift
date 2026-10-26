@@ -24,6 +24,9 @@ final class Settings: ObservableObject {
     @Published var theme: Theme { didSet { save(theme.rawValue, "theme") } }
     /// Bundle ID of the editor for "Open in…"; empty means the macOS default app.
     @Published var editorBundleID: String { didSet { save(editorBundleID, "editorBundleID") } }
+    @Published var syntaxHighlighting: Bool { didSet { save(syntaxHighlighting, "syntaxHighlighting") } }
+    /// Highlighting theme chosen for each Shade theme, by Shade theme raw value.
+    @Published var highlightThemes: [String: String] { didSet { save(highlightThemes, "highlightThemes") } }
     /// Repository sidebar: pinned open or not, and on which side.
     @Published var showSidebar: Bool { didSet { save(showSidebar, "showSidebar") } }
     @Published var sidebarOnRight: Bool { didSet { save(sidebarOnRight, "sidebarOnRight") } }
@@ -63,6 +66,8 @@ final class Settings: ObservableObject {
         opacity = d.object(forKey: "opacity") as? Double ?? 0.8
         theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
         editorBundleID = d.string(forKey: "editorBundleID") ?? ""
+        syntaxHighlighting = d.object(forKey: "syntaxHighlighting") as? Bool ?? true
+        highlightThemes = d.dictionary(forKey: "highlightThemes") as? [String: String] ?? [:]
         showSidebar = d.bool(forKey: "showSidebar")
         sidebarOnRight = d.bool(forKey: "sidebarOnRight")
         lastRepoPath = d.string(forKey: "lastRepoPath").flatMap { $0.isEmpty ? nil : $0 }
@@ -127,6 +132,11 @@ final class Settings: ObservableObject {
         /// Root of the git repository the file belongs to, for its diff and the sidebar.
         var repoRoot: String?
         var groupID: UUID?
+        /// Highlighting language chosen for a file card: nil detects it from the file name,
+        /// `Card.plainText` turns highlighting off.
+        var language: String?
+
+        static let plainText = "plaintext"
 
         init(kind: Kind = .notes, text: String = "", filePath: String? = nil, repoRoot: String? = nil) {
             self.kind = kind
@@ -145,6 +155,7 @@ final class Settings: ObservableObject {
             filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
             repoRoot = try container.decodeIfPresent(String.self, forKey: .repoRoot)
             groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
+            language = try container.decodeIfPresent(String.self, forKey: .language)
         }
 
         /// Tab label: the user's name if set; otherwise the running program's title for terminals,
@@ -217,6 +228,21 @@ final class Settings: ObservableObject {
             selectedCardID = cards[min(index, cards.count - 1)].id
         }
         removeEmptyGroups()
+    }
+
+    // MARK: - Highlighting
+
+    func highlightTheme(for theme: Theme) -> String {
+        highlightThemes[theme.rawValue] ?? theme.defaultHighlightTheme
+    }
+
+    func setHighlightTheme(_ name: String, for theme: Theme) {
+        highlightThemes[theme.rawValue] = name
+    }
+
+    func setLanguage(_ language: String?, of cardID: UUID) {
+        guard let index = cards.firstIndex(where: { $0.id == cardID }) else { return }
+        cards[index].language = language
     }
 
     // MARK: - Groups

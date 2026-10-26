@@ -11,6 +11,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/Shade"
 
+# highlight.js, its built-in themes and the theme catalog, read by SyntaxHighlighting.swift.
+mkdir -p "$APP/Contents/Resources"
+cp -R Resources/Highlighting "$APP/Contents/Resources/"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

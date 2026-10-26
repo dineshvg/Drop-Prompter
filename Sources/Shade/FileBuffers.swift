@@ -104,11 +104,19 @@ final class FileBuffers: ObservableObject {
 }
 
 /// Plain-text code editor: monospaced, no wrapping, undo, and none of the automatic substitutions that
-/// would break code (smart quotes, dashes, spelling correction).
+/// would break code (smart quotes, dashes, spelling correction). With `highlighting`, it colors the code
+/// with highlight.js as you type.
 struct CodeEditorView: NSViewRepresentable {
+    struct Highlighting: Equatable {
+        let language: String
+        let theme: String
+    }
+
     let text: String
     let font: NSFont
     let color: NSColor
+    /// Nil shows plain text.
+    let highlighting: Highlighting?
     let onChange: (String) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
@@ -135,32 +143,64 @@ struct CodeEditorView: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.font = font
-        textView.textColor = color
-        textView.insertionPointColor = color
+
+        // Highlighting needs Highlightr's text storage. Swapping it in also switches the view to TextKit 1.
+        if let highlightr = SyntaxHighlighting.shared.highlightr {
+            let storage = CodeAttributedString(highlightr: highlightr)
+            textView.layoutManager?.replaceTextStorage(storage)
+            context.coordinator.storage = storage
+        }
         textView.string = text
+        applyAppearance(to: textView, coordinator: context.coordinator)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.onChange = onChange
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        if textView.font != font { textView.font = font }
-        if textView.textColor != color {
-            textView.textColor = color
-            textView.insertionPointColor = color
-        }
         // Only when the text changed from outside (reload, revert), not on every keystroke.
         if textView.string != text {
             let cursor = min(textView.selectedRange().location, (text as NSString).length)
             textView.string = text
             textView.setSelectedRange(NSRange(location: cursor, length: 0))
+            if context.coordinator.storage?.language == nil {
+                textView.font = font
+                textView.textColor = color
+            }
+        }
+        applyAppearance(to: textView, coordinator: context.coordinator)
+    }
+
+    /// Applies font, color, theme and language, but only when one of them changed: re-highlighting a whole
+    /// file on every SwiftUI update would be slow.
+    private func applyAppearance(to textView: NSTextView, coordinator: Coordinator) {
+        let appearance = Coordinator.Appearance(highlighting: highlighting, fontSize: font.pointSize, color: color)
+        guard coordinator.appearance != appearance else { return }
+        coordinator.appearance = appearance
+
+        textView.insertionPointColor = color
+        textView.typingAttributes = [.font: font, .foregroundColor: color]
+        if let highlighting, let storage = coordinator.storage,
+           SyntaxHighlighting.shared.use(theme: highlighting.theme, font: font) {
+            storage.language = highlighting.language // re-highlights the whole text
+        } else {
+            coordinator.storage?.language = nil
+            textView.font = font
+            textView.textColor = color
         }
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
+        struct Appearance: Equatable {
+            let highlighting: Highlighting?
+            let fontSize: CGFloat
+            let color: NSColor
+        }
+
         var onChange: (String) -> Void
+        var storage: CodeAttributedString?
+        var appearance: Appearance?
 
         init(onChange: @escaping (String) -> Void) {
             self.onChange = onChange

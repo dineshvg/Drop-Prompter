@@ -73,6 +73,11 @@ work without switching to your IDE.
 - **Safe next to an agent**: unsaved edits survive switching cards and hiding the panel (an orange dot marks
   them). If the file changes on disk while you're editing, you choose: load the disk version or keep yours. Saving
   over a newer version asks first, and closing or quitting with unsaved edits asks too.
+- **Syntax highlighting** for about 190 languages, from Kotlin, Gradle, Java and Swift to XML, YAML, shell and
+  even `Jenkinsfile` and Fastlane's `Fastfile`, detected from the file name (or picked in the card's header).
+  Each Shade theme has its own highlighting theme; 16 come built in, including Android Studio, IntelliJ Light,
+  Xcode, GitHub and Atom One. **Get More Themes** in ⚙︎ downloads any of the other highlight.js themes, much
+  like installing a color scheme in Sublime Text, and you can add your own languages too.
 - **Quick Open (⌘P)**: type part of a file name and open the file as a viewer card next to your notes.
 - **Open in your editor**: one click hands a file or the whole repository to VS Code, Android Studio, Xcode or
   your default app (choose in ⚙︎ › Code).
@@ -130,6 +135,8 @@ without installing it.
 - Translation uses Apple's on-device Translation framework. The only feature that sends text anywhere is the 🌐
   button, which opens Google Translate in your browser.
 - Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app.
+- Highlighting runs locally. Shade only goes online when you click **Download** in *Get More Themes*, and then
+  only to cdnjs for that theme file.
 - The repository view runs `git status`, `git diff` and `git ls-files` locally and never writes with git. Files
   are written only when you save them in a file card.
 
@@ -162,12 +169,24 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
 | `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |
 | `FileBuffers.swift` | Editing, saving and conflict handling for file cards |
+| `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |
 | `HotKey.swift` | Global shortcut and conflict detection |
 | `Theme.swift` | Dark, Light and Paper themes |
 
+## Customizing syntax highlighting
+
+- **Themes**: ⚙︎ › Syntax Highlighting › *Get More Themes…* lists every theme of the bundled highlight.js release
+  (11.11.1). Downloaded themes go to `~/Library/Application Support/Shade/Highlighting/themes`; you can also drop
+  any highlight.js theme `.css` file there.
+- **Languages**: about 190 are built in. For another one, put its highlight.js *browser build* (a `.js` file that
+  calls `hljs.registerLanguage`) into `~/Library/Application Support/Shade/Highlighting/languages` and restart
+  Shade. *Open Folder* in ⚙︎ takes you there.
+- Files over 500 KB stay plain so typing stays fast.
+
 ## License
 
-Open source under the [MIT License](LICENSE). Copyright (c) 2026 dineshvg.
+Open source under the [MIT License](LICENSE). Copyright (c) 2026 dineshvg. Third-party components and their
+licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 You are free to use, copy, modify, merge, publish, distribute, sublicense and sell this software, in private
 or commercial projects, as long as the copyright notice and license text are kept.

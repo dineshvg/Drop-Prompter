@@ -162,6 +162,10 @@ struct ContentView: View {
                     theme: settings.theme,
                     codeSize: codeSize,
                     editorBundleID: settings.editorBundleID,
+                    languageOverride: card.language,
+                    highlightingEnabled: settings.syntaxHighlighting,
+                    highlightTheme: settings.highlightTheme(for: settings.theme),
+                    onSetLanguage: { settings.setLanguage($0, of: card.id) },
                     buffers: buffers
                 )
                 .id(card.id)
@@ -333,7 +337,7 @@ struct ContentView: View {
             Button { settings.showWelcome = true } label: { Image(systemName: "questionmark.circle") }
                 .help("Welcome and keyboard shortcuts")
             Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }
-                .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings) }
+                .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings, highlighting: SyntaxHighlighting.shared) }
             Button(action: onClose) { Image(systemName: "chevron.up") }
                 .help("Hide (Esc / ⌃Space)")
         }
@@ -709,11 +713,21 @@ struct ContentView: View {
 
 struct SettingsPopover: View {
     @ObservedObject var settings: Settings
+    @ObservedObject var highlighting: SyntaxHighlighting
+    @State private var showThemeCatalog = false
     /// Read from the system each time the popover opens; macOS owns the login item.
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginItemMessage: String?
 
     var body: some View {
+        if showThemeCatalog {
+            ThemeCatalogView(highlighting: highlighting) { showThemeCatalog = false }
+        } else {
+            settingsForm
+        }
+    }
+
+    private var settingsForm: some View {
         Form {
             Section("Shortcut") {
                 Picker("Show / hide panel", selection: $settings.hotKeyID) {
@@ -745,6 +759,24 @@ struct SettingsPopover: View {
                     Text("Default App").tag("")
                     ForEach(CodeEditors.installed) { Text($0.name).tag($0.bundleID) }
                 }
+            }
+            Section("Syntax Highlighting") {
+                Toggle("Highlight code in file cards", isOn: $settings.syntaxHighlighting)
+                Picker("Theme with \(settings.theme.name)", selection: Binding(
+                    get: { settings.highlightTheme(for: settings.theme) },
+                    set: { settings.setHighlightTheme($0, for: settings.theme) }
+                )) {
+                    ForEach(highlighting.installedThemes, id: \.self) { Text($0).tag($0) }
+                }
+                .disabled(!settings.syntaxHighlighting)
+                HStack {
+                    Button("Get More Themes…") { showThemeCatalog = true }
+                    Button("Open Folder") { NSWorkspace.shared.open(SyntaxHighlighting.userDirectory) }
+                }
+                Text("Each Shade theme keeps its own highlighting theme. To add a language, put its highlight.js "
+                    + "browser build (.js) into the folder's “languages” subfolder and restart Shade.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)

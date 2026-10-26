@@ -42,6 +42,8 @@ struct WelcomeView: View {
         ("arrow.triangle.branch", "In a git repository, a terminal card shows the branch and changes. Pin the "
             + "sidebar (⌘B) left or right to browse changes and files. Edit files in place (⌘S saves) or view their "
             + "diff, and open them in your editor with one click."),
+        ("paintbrush", "Code in file cards is highlighted for about 190 languages. Pick a theme, or download more, "
+            + "in ⚙︎ › Syntax Highlighting."),
         ("circle.lefthalf.filled", "The slider changes how see-through the background is."),
         ("paintpalette", "Themes: Dark, Light or Paper (a warm, yellowish tone) from the palette button or ⚙︎."),
         ("arrow.up.left.and.arrow.down.right", "Drag the bottom grip or corner to resize the panel."),
