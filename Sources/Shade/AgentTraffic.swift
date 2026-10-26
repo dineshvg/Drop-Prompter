@@ -1,34 +1,72 @@
 import Foundation
 import Network
 
-/// One call from an agent to its model API, as recorded by the relay.
+/// One call recorded by the relay: an agent's call to its model API, with everything sent and received, or a
+/// connection a program made through the proxy, of which only the host and the amount of data are known.
 struct TrafficExchange: Identifiable {
     let id = UUID()
-    let cardID: UUID
+    /// Nil when the proxy couldn't tell which card the call came from.
+    let cardID: UUID?
     let started: Date
-    let provider: AgentTraffic.Provider
+    /// Set for model API calls through the relay; nil for proxied connections.
+    let provider: AgentTraffic.Provider?
+    let host: String
+    let port: Int
     let method: String
-    /// Upstream path with query, e.g. "/v1/messages?beta=true".
+    /// Path with query, e.g. "/v1/messages?beta=true"; empty for an HTTPS tunnel, whose contents stay encrypted.
     let path: String
+    /// Program that made the call, when the proxy could find it.
+    var process: String?
+    /// Goes to a model or agent service (built-in list or ⚙︎ › Agent Traffic).
+    let isAgent: Bool
     let requestBody: Data
     var status: Int?
     var responseBody = Data()
+    var bytesSent = 0
+    var bytesReceived = 0
+    /// Refused by the proxy: a Strict card may only reach agent hosts.
+    var blocked = false
     var duration: TimeInterval?
     var error: String?
 
     var isFinished: Bool { duration != nil }
+    var isConnection: Bool { provider == nil }
+
+    /// "api.github.com", with the port when it isn't the usual one.
+    var address: String {
+        port == 443 || port == 80 ? host : "\(host):\(port)"
+    }
 }
 
-/// Records what agents in terminal cards send to their model APIs. A card gets `ANTHROPIC_BASE_URL` and
+/// Records what programs in terminal cards send over the network. A card gets `ANTHROPIC_BASE_URL` and
 /// `OPENAI_BASE_URL` pointing to this relay on 127.0.0.1; the relay forwards each call over HTTPS to the real API
-/// and keeps a copy. It only forwards to those APIs, needs no certificates, and keeps everything in memory.
+/// and keeps a copy. The card's `HTTPS_PROXY` and `HTTP_PROXY` point here too: every other connection passes
+/// through unchanged and is logged by host and size, since HTTPS keeps its contents encrypted. No certificates,
+/// and everything stays in memory.
 @MainActor
 final class AgentTraffic: ObservableObject {
     static let shared = AgentTraffic()
 
     static let port: UInt16 = 18090
-    /// Recorded calls kept in memory; requests carry whole conversations, so this stays modest.
+    /// Recorded model calls kept in memory; requests carry whole conversations, so this stays modest.
     static let limit = 100
+    /// Proxied connections kept in memory; they're small, but a package install makes hundreds.
+    static let connectionLimit = 1_000
+
+    /// Model and agent services: their calls show under "Agents", and they're all a Strict card may reach.
+    /// Copilot CLI talks to githubcopilot.com and api.github.com; Claude Code signs in through claude.com.
+    static let builtInAgentHosts = [
+        "anthropic.com", "claude.ai", "claude.com", "openai.com", "chatgpt.com",
+        "githubcopilot.com", "api.github.com", "generativelanguage.googleapis.com", "cloudcode-pa.googleapis.com",
+    ]
+
+    /// Who opened a proxy connection, found from the calling process.
+    struct Caller {
+        let cardID: UUID
+        let process: String?
+        /// A Strict card: only agent hosts.
+        let restricted: Bool
+    }
 
     enum Provider: String {
         case anthropic, openai
@@ -53,6 +91,13 @@ final class AgentTraffic: ObservableObject {
     @Published private(set) var listenerError: String?
     /// Card whose calls the Agent Traffic card shows; nil shows all.
     @Published var filterCardID: UUID?
+    /// Show every recorded connection, not only calls to agent hosts.
+    @Published var showAllTraffic = false
+
+    /// Hosts the user added in ⚙︎, one per entry; a host also covers its subdomains.
+    var extraAgentHosts: [String] = []
+    /// Finds the card (and program) behind a proxy connection from its local port. Set by the terminal sessions.
+    var identifyCaller: ((_ clientPort: UInt16) -> Caller?)?
 
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: RelayConnection] = [:]
@@ -60,15 +105,29 @@ final class AgentTraffic: ObservableObject {
 
     // MARK: - Use
 
-    /// Environment for a card whose model calls should be recorded. Nil when the relay can't run.
+    /// Environment for a card whose network calls should be recorded. Nil when the relay can't run.
     func environment(for cardID: UUID) -> [String: String]? {
         guard startListening() else { return nil }
-        let base = "http://127.0.0.1:\(Self.port)/card/\(cardID.uuidString)"
+        let local = "127.0.0.1:\(Self.port)"
+        let base = "http://\(local)/card/\(cardID.uuidString)"
+        // The card's ID as proxy credentials names the card when Shade can't find the calling process.
+        let proxy = "http://card:\(cardID.uuidString)@\(local)"
+        let noProxy = "localhost,127.0.0.1,::1"
         return [
             "ANTHROPIC_BASE_URL": base + "/anthropic",
             "OPENAI_BASE_URL": base + "/openai/v1",
+            // Tools differ in which spelling they read.
+            "HTTPS_PROXY": proxy, "https_proxy": proxy, "HTTP_PROXY": proxy, "http_proxy": proxy,
+            "NO_PROXY": noProxy, "no_proxy": noProxy,
+            // Node's built-in fetch only follows the proxy variables when asked to.
+            "NODE_USE_ENV_PROXY": "1",
             "SHADE_AGENT_TRAFFIC": "1",
         ]
+    }
+
+    func isAgentHost(_ host: String) -> Bool {
+        let host = host.lowercased()
+        return (Self.builtInAgentHosts + extraAgentHosts).contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     func clear() {
@@ -126,11 +185,31 @@ final class AgentTraffic: ObservableObject {
 
     fileprivate func record(_ exchange: TrafficExchange) {
         exchanges.append(exchange)
-        if exchanges.count > Self.limit { exchanges.removeFirst(exchanges.count - Self.limit) }
+        let limit = exchange.isConnection ? Self.connectionLimit : Self.limit
+        let sameKind = exchanges.indices.filter { exchanges[$0].isConnection == exchange.isConnection }
+        if sameKind.count > limit, let oldest = sameKind.first { exchanges.remove(at: oldest) }
     }
 
-    fileprivate func update(_ id: UUID, _ change: (inout TrafficExchange) -> Void) {
-        guard let index = exchanges.firstIndex(where: { $0.id == id }) else { return }
+    /// The card behind a proxy connection: found from the calling process, else named by the proxy credentials.
+    /// Only a process Shade found in a card that isn't Strict may reach any host; credentials can be copied.
+    fileprivate func caller(clientPort: UInt16?, authorization: String?) -> (cardID: UUID?, process: String?, restricted: Bool) {
+        if let clientPort, let caller = identifyCaller?(clientPort) {
+            return (caller.cardID, caller.process, caller.restricted)
+        }
+        return (Self.cardID(fromProxyAuthorization: authorization), nil, true)
+    }
+
+    /// "Basic base64(card:<id>)", as sent for the credentials in the card's proxy URL.
+    private static func cardID(fromProxyAuthorization header: String?) -> UUID? {
+        guard let header, header.lowercased().hasPrefix("basic "),
+              let data = Data(base64Encoded: String(header.dropFirst(6)).trimmingCharacters(in: .whitespaces)),
+              let credentials = String(data: data, encoding: .utf8), credentials.hasPrefix("card:")
+        else { return nil }
+        return UUID(uuidString: String(credentials.dropFirst(5)))
+    }
+
+    fileprivate func update(_ id: UUID?, _ change: (inout TrafficExchange) -> Void) {
+        guard let id, let index = exchanges.firstIndex(where: { $0.id == id }) else { return }
         change(&exchanges[index])
     }
 
@@ -202,7 +281,9 @@ private struct HTTPRequest {
 
 // MARK: - Connections
 
-/// One TCP connection from an agent. Requests on a keep-alive connection are handled one after another.
+/// One TCP connection from a program in a card. Model API requests on a keep-alive connection are handled one
+/// after another. A proxy request (CONNECT, or a full `http://` URL) turns the connection into a tunnel to that
+/// host: from then on bytes pass through unchanged and are only counted.
 @MainActor
 private final class RelayConnection {
     private let connection: NWConnection
@@ -210,6 +291,20 @@ private final class RelayConnection {
     private var buffer = Data()
     private var isBusy = false
     private var isClosed = false
+
+    // Tunnel state, once the connection is proxied.
+    private var upstream: NWConnection?
+    private var tunnelExchange: UUID?
+    private var isUpstreamReady = false
+    /// Bytes from the program that arrived before the upstream connection was ready.
+    private var pendingUpstream = Data()
+    /// A plain `http://` request reads the status from the first line of the response.
+    private var readsResponseStatus = false
+    private var clientDone = false
+    private var upstreamDone = false
+    private var bytesSent = 0
+    private var bytesReceived = 0
+    private var lastPublished = Date.distantPast
 
     /// Headers that only describe this hop, not the request itself.
     private static let hopHeaders: Set<String> = [
@@ -239,6 +334,8 @@ private final class RelayConnection {
         guard !isClosed else { return }
         isClosed = true
         connection.cancel()
+        upstream?.cancel()
+        finishTunnel(error: nil)
         owner?.closed(self)
     }
 
@@ -247,11 +344,19 @@ private final class RelayConnection {
             MainActor.assumeIsolated {
                 guard let self, !self.isClosed else { return }
                 if let data, !data.isEmpty {
-                    self.buffer.append(data)
-                    self.handleBufferedRequest()
+                    if self.upstream != nil {
+                        self.sendUpstream(data)
+                    } else {
+                        self.buffer.append(data)
+                        self.handleBufferedRequest()
+                    }
                 }
                 if isComplete || error != nil {
-                    if !self.isBusy { self.close() }
+                    if self.upstream != nil {
+                        self.clientFinished()
+                    } else if !self.isBusy {
+                        self.close()
+                    }
                 } else {
                     self.receive()
                 }
@@ -260,9 +365,13 @@ private final class RelayConnection {
     }
 
     private func handleBufferedRequest() {
-        guard !isBusy, let parsed = HTTPRequest.parse(buffer) else { return }
+        guard !isBusy, upstream == nil, let parsed = HTTPRequest.parse(buffer) else { return }
         let request = parsed.request
         buffer.removeFirst(parsed.length)
+        if request.method == "CONNECT" || request.target.lowercased().hasPrefix("http://") {
+            proxy(request)
+            return
+        }
         isBusy = true
 
         // Target: /card/<card id>/<anthropic|openai>/<path on the API>
@@ -287,10 +396,212 @@ private final class RelayConnection {
         if !request.body.isEmpty { forwarded.httpBody = request.body }
 
         let exchange = TrafficExchange(
-            cardID: cardID, started: Date(), provider: provider, method: request.method, path: path,
-            requestBody: request.body)
+            cardID: cardID, started: Date(), provider: provider, host: provider.upstream.host ?? "", port: 443,
+            method: request.method, path: path, process: owner?.caller(clientPort: clientPort, authorization: nil).process,
+            isAgent: true, requestBody: request.body)
         owner?.record(exchange)
         owner?.forward(forwarded, for: self, exchange: exchange.id)
+    }
+
+    // MARK: Proxy
+
+    private func proxy(_ request: HTTPRequest) {
+        guard let owner else { return close() }
+        let isConnect = request.method == "CONNECT"
+        let target: (host: String, port: Int, path: String)?
+        if isConnect {
+            target = Self.hostAndPort(request.target).map { ($0.host, $0.port, "") }
+        } else if let url = URLComponents(string: request.target), let host = url.host {
+            let path = (url.percentEncodedPath.isEmpty ? "/" : url.percentEncodedPath)
+                + (url.percentEncodedQuery.map { "?" + $0 } ?? "")
+            target = (host, url.port ?? 80, path)
+        } else {
+            target = nil
+        }
+        guard let target, let port = NWEndpoint.Port(rawValue: UInt16(clamping: target.port)) else {
+            return refuse(status: 400, message: "Shade's proxy couldn't read the address \(request.target).")
+        }
+
+        let caller = owner.caller(clientPort: clientPort, authorization: request.header("Proxy-Authorization"))
+        let isLocal = ["localhost", "127.0.0.1", "::1"].contains(target.host.lowercased())
+        let isAgent = owner.isAgentHost(target.host)
+        var exchange = TrafficExchange(
+            cardID: caller.cardID, started: Date(), provider: nil, host: target.host, port: target.port,
+            method: request.method, path: target.path, process: caller.process, isAgent: isAgent,
+            requestBody: Data())
+
+        if isLocal && target.port == Int(AgentTraffic.port) {
+            exchange.error = "Refused: the proxy can't connect to itself."
+            exchange.duration = 0
+            owner.record(exchange)
+            return refuse(status: 400, message: "Shade's proxy can't connect to itself.")
+        }
+        // A Strict card's sandbox only lets programs reach this Mac, so the proxy is their only way out.
+        if caller.restricted && !isAgent && !isLocal {
+            exchange.blocked = true
+            exchange.status = 403
+            exchange.duration = 0
+            owner.record(exchange)
+            return refuse(status: 403, message: "Shade blocked this connection: a Strict card may only reach agent "
+                + "services. Add \(target.host) in ⚙︎ › Agent Traffic to allow it.")
+        }
+        owner.record(exchange)
+        tunnelExchange = exchange.id
+
+        // A plain HTTP request goes on in its usual form, one per connection, so the tunnel ends with its response.
+        var opening = Data()
+        if !isConnect {
+            readsResponseStatus = true
+            var head = "\(request.method) \(target.path) HTTP/1.1\r\nHost: \(target.host)"
+                + (target.port == 80 ? "" : ":\(target.port)") + "\r\n"
+            for header in request.headers where !Self.hopHeaders.contains(header.name.lowercased())
+                && !header.name.lowercased().hasPrefix("proxy-") {
+                head += "\(header.name): \(header.value)\r\n"
+            }
+            if !request.body.isEmpty || ["POST", "PUT", "PATCH"].contains(request.method) {
+                head += "Content-Length: \(request.body.count)\r\n"
+            }
+            head += "Connection: close\r\n\r\n"
+            opening = Data(head.utf8) + request.body
+        }
+        pendingUpstream = opening + buffer
+        buffer.removeAll()
+
+        let upstream = NWConnection(host: NWEndpoint.Host(target.host), port: port, using: .tcp)
+        self.upstream = upstream
+        upstream.stateUpdateHandler = { [weak self] state in
+            MainActor.assumeIsolated { self?.upstreamChanged(state, isConnect: isConnect) }
+        }
+        upstream.start(queue: .main)
+    }
+
+    private func upstreamChanged(_ state: NWConnection.State, isConnect: Bool) {
+        guard !isClosed, let upstream else { return }
+        switch state {
+        case .ready:
+            guard !isUpstreamReady else { return }
+            isUpstreamReady = true
+            if isConnect {
+                send(Data("HTTP/1.1 200 Connection Established\r\n\r\n".utf8))
+                owner?.update(tunnelExchange) { $0.status = 200 }
+            }
+            if !pendingUpstream.isEmpty {
+                bytesSent += pendingUpstream.count
+                upstream.send(content: pendingUpstream, completion: .contentProcessed { _ in })
+                pendingUpstream.removeAll()
+            }
+            if clientDone { upstream.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .idempotent) }
+            receiveUpstream()
+        case .waiting(let error), .failed(let error):
+            // .waiting means it can't connect yet (e.g. the name doesn't resolve); don't let the program hang.
+            if isUpstreamReady {
+                // Once data has flowed, this is just how the connection ended (e.g. a reset), not a failure.
+                finishTunnel(error: bytesReceived == 0 ? error.localizedDescription : nil)
+                close()
+            } else {
+                finishTunnel(error: error.localizedDescription)
+                refuse(status: 502, message: "Shade's proxy couldn't connect: \(error.localizedDescription)")
+            }
+        default:
+            break
+        }
+    }
+
+    private func receiveUpstream() {
+        upstream?.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { [weak self] data, _, isComplete, error in
+            MainActor.assumeIsolated {
+                guard let self, !self.isClosed else { return }
+                if let data, !data.isEmpty {
+                    if self.readsResponseStatus {
+                        self.readsResponseStatus = false
+                        // "HTTP/1.1 200 OK"
+                        let line = String(decoding: data.prefix(32), as: UTF8.self).split(separator: " ")
+                        if line.count >= 2, let status = Int(line[1]) {
+                            self.owner?.update(self.tunnelExchange) { $0.status = status }
+                        }
+                    }
+                    self.bytesReceived += data.count
+                    self.send(data)
+                    self.publishCounts()
+                }
+                if isComplete || error != nil {
+                    self.upstreamDone = true
+                    // Pass the end on to the program, then close once it's sent.
+                    self.connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
+                                         completion: .contentProcessed { [weak self] _ in
+                        MainActor.assumeIsolated { self?.close() }
+                    })
+                } else {
+                    self.receiveUpstream()
+                }
+            }
+        }
+    }
+
+    private func sendUpstream(_ data: Data) {
+        guard let upstream else { return }
+        guard isUpstreamReady else {
+            pendingUpstream.append(data)
+            return
+        }
+        bytesSent += data.count
+        upstream.send(content: data, completion: .contentProcessed { _ in })
+        publishCounts()
+    }
+
+    /// The program closed its side: pass that on, and close once the other side is done too.
+    private func clientFinished() {
+        clientDone = true
+        if upstreamDone { return close() }
+        if isUpstreamReady {
+            upstream?.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .idempotent)
+        }
+    }
+
+    /// Counts are published at most twice a second, so a download doesn't redraw the list for every packet.
+    private func publishCounts(force: Bool = false) {
+        guard force || Date().timeIntervalSince(lastPublished) > 0.5 else { return }
+        lastPublished = Date()
+        let sent = bytesSent, received = bytesReceived
+        owner?.update(tunnelExchange) {
+            $0.bytesSent = sent
+            $0.bytesReceived = received
+        }
+    }
+
+    private func finishTunnel(error: String?) {
+        guard let id = tunnelExchange else { return }
+        publishCounts(force: true)
+        owner?.update(id) { exchange in
+            guard !exchange.isFinished else { return }
+            exchange.duration = Date().timeIntervalSince(exchange.started)
+            if let error { exchange.error = error }
+        }
+    }
+
+    /// Answers a proxy request that won't be tunnelled, then closes: the program may not reuse the connection.
+    private func refuse(status: Int, message: String) {
+        let body = Data(message.utf8)
+        let head = "HTTP/1.1 \(status) \(HTTPURLResponse.localizedString(forStatusCode: status).capitalized)\r\n"
+            + "Content-Type: text/plain; charset=utf-8\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        connection.send(content: Data(head.utf8) + body, contentContext: .finalMessage, isComplete: true,
+                        completion: .contentProcessed { [weak self] _ in
+            MainActor.assumeIsolated { self?.close() }
+        })
+    }
+
+    /// The program's end of the connection, to find which process opened it.
+    private var clientPort: UInt16? {
+        if case .hostPort(_, let port) = connection.endpoint { return port.rawValue }
+        return nil
+    }
+
+    /// "host:443", or "[::1]:443" for IPv6.
+    private static func hostAndPort(_ target: String) -> (host: String, port: Int)? {
+        guard let colon = target.lastIndex(of: ":"), let port = Int(target[target.index(after: colon)...]) else { return nil }
+        var host = String(target[..<colon])
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        return host.isEmpty ? nil : (host, port)
     }
 
     // MARK: Responding

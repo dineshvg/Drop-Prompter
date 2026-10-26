@@ -50,11 +50,16 @@ final class TerminalSessions: ObservableObject {
     /// Commands to type into a card's shell once it starts (e.g. the sandbox log).
     private var pendingCommands: [UUID: String] = [:]
 
-    /// The card's terminal; its shell starts on first use, inside `sandbox` when given.
-    func view(for cardID: UUID, sandbox: SandboxConfig? = nil) -> ActivityTerminalView {
+    init() {
+        agentTraffic.identifyCaller = { [weak self] port in self?.caller(clientPort: port) }
+    }
+
+    /// The card's terminal; its shell starts on first use, inside `sandbox` when given, with its network calls
+    /// going through Agent Traffic when `recordTraffic` is set.
+    func view(for cardID: UUID, sandbox: SandboxConfig? = nil, recordTraffic: Bool = false) -> ActivityTerminalView {
         if let session = sessions[cardID] { return session.view }
         let session = TerminalSession(
-            cardID: cardID, owner: self, sandbox: sandbox,
+            cardID: cardID, owner: self, sandbox: sandbox, recordTraffic: recordTraffic,
             initialCommand: pendingCommands.removeValue(forKey: cardID))
         sessions[cardID] = session
         return session.view
@@ -78,6 +83,19 @@ final class TerminalSessions: ObservableObject {
     /// Programs still running in any terminal card, for the quit confirmation.
     var runningPrograms: [String] {
         sessions.keys.compactMap(runningProgram(in:))
+    }
+
+    /// The card whose shell (or one of its child processes) has a connection to Agent Traffic open from
+    /// `clientPort`.
+    private func caller(clientPort: UInt16) -> AgentTraffic.Caller? {
+        var shells: [pid_t: (cardID: UUID, isStrict: Bool)] = [:]
+        for (cardID, session) in sessions {
+            guard let pid = session.view.process?.shellPid, pid > 0 else { continue }
+            shells[pid] = (cardID, session.sandbox?.level == .strict)
+        }
+        guard let found = SocketOwner.find(localPort: clientPort, remotePort: AgentTraffic.port, under: Set(shells.keys)),
+              let card = shells[found.shell] else { return nil }
+        return AgentTraffic.Caller(cardID: card.cardID, process: SocketOwner.name(of: found.pid), restricted: card.isStrict)
     }
 
     func close(_ cardID: UUID) {
@@ -125,14 +143,16 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
     let cardID: UUID
     weak var owner: TerminalSessions?
     let view = ActivityTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 300))
-    private let sandbox: SandboxConfig?
+    let sandbox: SandboxConfig?
+    private let recordTraffic: Bool
     private var isClosed = false
     private var startedAt = Date()
 
-    init(cardID: UUID, owner: TerminalSessions, sandbox: SandboxConfig?, initialCommand: String?) {
+    init(cardID: UUID, owner: TerminalSessions, sandbox: SandboxConfig?, recordTraffic: Bool, initialCommand: String?) {
         self.cardID = cardID
         self.owner = owner
         self.sandbox = sandbox
+        self.recordTraffic = recordTraffic
         super.init()
         view.processDelegate = self
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -170,6 +190,9 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         startedAt = Date()
 
         guard let sandbox else {
+            if recordTraffic {
+                guard recordedEnvironment(&environment) else { return }
+            }
             // A leading "-" in argv[0] starts a login shell, which loads the user's profile like Terminal.app does.
             view.startProcess(
                 executable: shell,
@@ -197,21 +220,30 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         view.feed(text: "Shade: sandboxed shell (\(sandbox.level.name)). Writes are limited to "
             + "\(sandbox.root.path), temp and tool caches; keys and credentials can't be read.\r\n")
 
-        if sandbox.recordTraffic {
-            // Recorded: model calls go through Shade's relay. If it can't run, don't start the shell at all.
-            guard let relay = owner?.agentTraffic.environment(for: cardID) else {
-                let reason = owner?.agentTraffic.listenerError ?? "Agent Traffic couldn't start."
-                view.feed(text: "Shade: \(reason) The shell was not started.\r\n")
-                return
-            }
-            environment.merge(relay) { _, recorded in recorded }
+        if recordTraffic {
+            guard recordedEnvironment(&environment) else { return }
             if sandbox.level == .strict {
-                // Strict only allows this Mac, so skip Claude Code's other services (telemetry, update checks).
+                // Strict only lets agent services through, so skip Claude Code's others (telemetry, update checks).
                 environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
             }
-            view.feed(text: "Shade: calls to the Anthropic and OpenAI APIs are recorded. See them in Agent Traffic.\r\n")
         }
         launchSandboxed(shell: shell, profile: profile, root: sandbox.root, environment: environment)
+    }
+
+    /// Points the card's model calls and proxy at Shade's relay. If it can't run, the shell isn't started at all,
+    /// so nothing runs unrecorded.
+    private func recordedEnvironment(_ environment: inout [String: String]) -> Bool {
+        guard let relay = owner?.agentTraffic.environment(for: cardID) else {
+            let reason = owner?.agentTraffic.listenerError ?? "Agent Traffic couldn't start."
+            view.feed(text: "Shade: \(reason) The shell was not started.\r\n")
+            return false
+        }
+        environment.merge(relay) { _, recorded in recorded }
+        view.feed(text: "Shade: this card's network calls are recorded. See them in Agent Traffic.\r\n")
+        if sandbox?.level == .strict {
+            view.feed(text: "Shade: Strict lets programs reach only agent services, through Shade.\r\n")
+        }
+        return true
     }
 
     private func launchSandboxed(shell: String, profile: URL, root: URL, environment: [String: String]) {
@@ -257,9 +289,10 @@ struct TerminalPane: NSViewRepresentable {
     let sessions: TerminalSessions
     let cardID: UUID
     let sandbox: SandboxConfig?
+    let recordTraffic: Bool
 
     func makeNSView(context: Context) -> ActivityTerminalView {
-        let view = sessions.view(for: cardID, sandbox: sandbox)
+        let view = sessions.view(for: cardID, sandbox: sandbox, recordTraffic: recordTraffic)
         // Type straight into the shell when the card is shown.
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         return view

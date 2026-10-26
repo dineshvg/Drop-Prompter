@@ -25,8 +25,21 @@ final class Settings: ObservableObject {
     /// Bundle ID of the editor for "Open in…"; empty means the macOS default app.
     @Published var editorBundleID: String { didSet { save(editorBundleID, "editorBundleID") } }
     @Published var syntaxHighlighting: Bool { didSet { save(syntaxHighlighting, "syntaxHighlighting") } }
-    /// Whether new sandboxed terminal cards record their model API calls (Agent Traffic).
+    /// Whether new terminal cards, sandboxed or not, record their network calls (Agent Traffic).
     @Published var recordAgentTraffic: Bool { didSet { save(recordAgentTraffic, "recordAgentTraffic") } }
+    /// Hosts to count as agent services on top of the built-in ones, separated by commas or spaces.
+    @Published var extraAgentHosts: String { didSet { save(extraAgentHosts, "extraAgentHosts") } }
+
+    /// `extraAgentHosts` as a list: lowercased, without a scheme or path.
+    var extraAgentHostList: [String] {
+        extraAgentHosts.split(whereSeparator: { $0 == "," || $0.isWhitespace }).compactMap { entry in
+            var host = entry.lowercased()
+            if let scheme = host.range(of: "://") { host = String(host[scheme.upperBound...]) }
+            host = String(host.prefix { $0 != "/" && $0 != ":" })
+            while host.hasPrefix("*") || host.hasPrefix(".") { host.removeFirst() }
+            return host.isEmpty ? nil : host
+        }
+    }
     /// Opacity of the solid background behind code and terminals, separate from the see-through panel.
     @Published var codeBackgroundOpacity: Double { didSet { save(codeBackgroundOpacity, "codeBackgroundOpacity") } }
     static let codeBackgroundRange = 0.3...1.0
@@ -75,6 +88,7 @@ final class Settings: ObservableObject {
         editorBundleID = d.string(forKey: "editorBundleID") ?? ""
         syntaxHighlighting = d.object(forKey: "syntaxHighlighting") as? Bool ?? true
         recordAgentTraffic = d.bool(forKey: "recordAgentTraffic")
+        extraAgentHosts = d.string(forKey: "extraAgentHosts") ?? ""
         codeBackgroundOpacity = d.object(forKey: "codeBackgroundOpacity") as? Double ?? 0.75
         highlightThemes = d.dictionary(forKey: "highlightThemes") as? [String: String] ?? [:]
         showSidebar = d.bool(forKey: "showSidebar")
@@ -152,6 +166,9 @@ final class Settings: ObservableObject {
 
         static let plainText = "plaintext"
 
+        /// A terminal card whose network calls go through Agent Traffic.
+        var recordsTraffic: Bool { kind == .terminal && recordTraffic == true }
+
         var sandboxConfig: SandboxConfig? {
             guard kind == .terminal, let sandbox, let sandboxRoot else { return nil }
             return SandboxConfig(level: sandbox, root: URL(fileURLWithPath: sandboxRoot, isDirectory: true),
@@ -224,7 +241,7 @@ final class Settings: ObservableObject {
         card.name = name
         card.sandbox = sandbox?.level
         card.sandboxRoot = sandbox?.root.path
-        card.recordTraffic = sandbox?.recordTraffic
+        if kind == .terminal { card.recordTraffic = sandbox?.recordTraffic ?? recordAgentTraffic }
         card.groupID = currentCard.groupID
         cards.append(card)
         keepGroupsTogether()

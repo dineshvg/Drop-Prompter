@@ -77,7 +77,8 @@ macOS's built-in sandbox:
   scripts, git configuration and the project's `.git/hooks` and `.git/config`, and Claude Code's settings and
   `CLAUDE.md` can't be written, because they'd run outside the sandbox the next time you use them.
 - **Strict (No Network)**: the same, plus no network except to your own Mac, for reviewing code without anything
-  leaving it. (An agent that needs its cloud API won't work in this mode.)
+  leaving it. An agent that needs its cloud API works only with **Record Agent Traffic** on: then programs can
+  reach agent services such as Anthropic, OpenAI and GitHub Copilot through Shade, and nothing else.
 - The tab shows a green shield, and **Blocked Actions** opens a live log of everything the sandbox denied.
 
 Good to know: the sandbox is fixed when the card starts, so `cd`-ing elsewhere doesn't widen it. Things it blocks
@@ -87,25 +88,35 @@ deprecated but still ships and which tools like Chrome and coding agents rely on
 guarantee.
 
 ### See what agents send
-Turn on **Record Agent Traffic** in the 🛡 menu before opening a sandboxed terminal card. Everything the agent in
-that card sends to its model, and everything that comes back, shows up in an **Agent Traffic** card (the button in
-the card's bar, or **Agent Traffic** in the menu bar icon):
-- a list of calls with model, status, tokens and duration, filterable by card;
-- a **Summary** of each call: the system prompt, the last user message, the reply, and the tools offered and used;
-- the full **Request** and **Response**, pretty-printed and highlighted.
+Turn on **Record Agent Traffic** in the 🛡 menu before opening a terminal card, sandboxed or not. What programs in
+that card send over the network shows up in an **Agent Traffic** card (the button in the card's bar, or **Agent
+Traffic** in the menu bar icon):
+- a list of calls with model or host, the program that made them, status, tokens or bytes and duration, filterable
+  by card. **Agents** shows calls to model and agent services; **All** shows every connection;
+- a **Summary** of each model call: the system prompt, the last user message, the reply, and the tools offered and
+  used;
+- the full **Request** and **Response** of model calls, pretty-printed and highlighted.
 
-How it works: the card's agent is pointed at a small relay inside Shade (`ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL`
-set to `127.0.0.1:18090`). Shade forwards each call over normal HTTPS to `api.anthropic.com` or `api.openai.com` and
-keeps a copy, streaming replies straight through. Nothing to install, no certificates.
+How it works: the card's programs are pointed at a small relay inside Shade on `127.0.0.1:18090`.
+- **Model calls in full**: `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` point to the relay, which forwards each call
+  over normal HTTPS to `api.anthropic.com` or `api.openai.com` and keeps a copy, streaming replies straight
+  through. Covered: Claude Code and other tools that use the Anthropic API, and tools that honor `OPENAI_BASE_URL`.
+- **Every other connection, by host and size**: `HTTPS_PROXY` and `HTTP_PROXY` point to the relay too, which most
+  tools follow (curl, git, npm, pip, Claude Code, GitHub Copilot CLI…). HTTPS stays encrypted between the program
+  and the server, so Shade records the host, the program, how much went each way and how long it took, not the
+  contents. That's how Copilot CLI shows up: its model calls go to GitHub with no address to point elsewhere.
+  Nothing to install, no certificates.
+- Shade tells which card and program made a connection by asking macOS which process has it open, like `lsof`.
 - **Strict + Record Agent Traffic** is the auditable setup: the sandbox blocks every connection except to your
-  Mac, so the agent can only reach its model through Shade, and every call is recorded. (In this mode Shade also
-  turns off Claude Code's non-essential traffic such as telemetry, which couldn't get out anyway.)
-- Covered: Claude Code and other tools that use the Anthropic API, and tools that honor `OPENAI_BASE_URL`. Tools
-  with a fixed API address, or other services an agent talks to, aren't recorded.
-- The relay only accepts connections from your Mac and only forwards to those two APIs. If it can't start, the
-  card doesn't start a shell, so nothing runs unrecorded.
-- Recordings stay in memory: the last 100 calls, until you click **Clear** or quit Shade. They contain your code
-  and prompts.
+  Mac, so programs can only go out through Shade, and Shade lets them reach only agent services. Every call is
+  listed, and blocked ones show as **BLOCKED**. Agent services are Anthropic, Claude, OpenAI, ChatGPT, GitHub
+  Copilot (`githubcopilot.com`, `api.github.com`) and Gemini; add your own in ⚙︎ › **Agent Traffic**. (In this
+  mode Shade also turns off Claude Code's non-essential traffic such as telemetry, which would be blocked anyway.)
+- Tools that ignore the proxy settings connect directly and aren't recorded; in a Strict card they can't connect
+  at all.
+- If the relay can't start, the card doesn't start a shell, so nothing runs unrecorded.
+- Recordings stay in memory: the last 100 model calls and 1,000 connections, until you click **Clear** or quit
+  Shade. Model calls contain your code and prompts.
 
 ### See what your agent changed
 When a terminal card's shell is inside a git repository, Shade notices and shows a slim repo bar: the
@@ -212,8 +223,8 @@ work is about **what programs in terminal cards, especially AI agents, can do**.
   `gradle.properties`, and more);
 - escaping later through files that run outside the sandbox: folders on `PATH`, Gradle init scripts, git hooks and
   configuration, Claude Code's settings;
-- with **Strict**: any network connection except to your own Mac. With **Record Agent Traffic**, every model call that does
-  go out is visible.
+- with **Strict**: any network connection except to your own Mac. With **Record Agent Traffic**, programs can also
+  reach agent services through Shade, and every connection that goes out is listed.
 
 **What it doesn't protect against** (known limits)
 - **Reading other files.** In *Project Only*, programs can still read the rest of your home folder, such as
@@ -229,8 +240,11 @@ work is about **what programs in terminal cards, especially AI agents, can do**.
 - **Normal terminal cards**, which run with your full user permissions, like Terminal.app.
 
 **Agent Traffic**: recorded calls contain your code and prompts. They stay in Shade's memory and are never
-written to disk. The relay listens only on your Mac's loopback interface and forwards only to the Anthropic and
-OpenAI APIs, so it can't be used as a general proxy.
+written to disk. The relay listens only on your Mac's loopback interface. Its proxy lets a program reach any host
+only when Shade traces the connection to a process in a card that isn't Strict; everything else, including
+programs outside Shade, may reach only agent services. The card names a program sends in its proxy credentials
+only label the call and never widen that. Note that agent services can carry data out too: Strict + Record Agent
+Traffic shows you every such connection, it doesn't stop them.
 
 **Reporting a vulnerability**: please use GitHub's private vulnerability reporting (the repository's *Security*
 tab) rather than a public issue.
@@ -286,7 +300,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
 | `Sandbox.swift` | Sandbox profiles for sandboxed terminal cards |
-| `AgentTraffic.swift`, `TrafficView.swift` | The relay that records model API calls, and the Agent Traffic card |
+| `AgentTraffic.swift`, `TrafficView.swift` | The relay and proxy that record model API calls and connections, and the Agent Traffic card |
 | `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |
 | `FileBuffers.swift` | Editing, saving and conflict handling for file cards |
 | `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |

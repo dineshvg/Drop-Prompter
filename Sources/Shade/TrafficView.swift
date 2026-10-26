@@ -117,7 +117,9 @@ struct TrafficView: View {
     @State private var rendered: NSAttributedString?
 
     private var visible: [TrafficExchange] {
-        traffic.exchanges.filter { traffic.filterCardID == nil || $0.cardID == traffic.filterCardID }.reversed()
+        traffic.exchanges.filter {
+            (traffic.filterCardID == nil || $0.cardID == traffic.filterCardID) && (traffic.showAllTraffic || $0.isAgent)
+        }.reversed()
     }
 
     private var selected: TrafficExchange? {
@@ -146,6 +148,14 @@ struct TrafficView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+                Picker("Show", selection: $traffic.showAllTraffic) {
+                    Text("Agents").tag(false)
+                    Text("All").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("Agents: calls to model and agent services. All: every connection the card's programs made.")
                 Spacer()
                 Text("\(visible.count) calls")
                     .font(.caption)
@@ -165,8 +175,8 @@ struct TrafficView: View {
                     .padding(12)
             }
             if visible.isEmpty {
-                Text("No calls yet. Turn on Record Agent Traffic in the 🛡 menu, open a sandboxed terminal card and "
-                    + "run claude (or another agent). Its calls to the model appear here.")
+                Text("No calls yet. Turn on Record Agent Traffic in the 🛡 menu, open a terminal card and run claude, "
+                    + "copilot or another agent. Its calls appear here; choose All to see every connection.")
                     .foregroundStyle(.secondary)
                     .padding(12)
                 Spacer()
@@ -181,12 +191,13 @@ struct TrafficView: View {
     }
 
     private func row(_ exchange: TrafficExchange) -> some View {
-        let summary = TrafficSummary(exchange)
+        let summary = exchange.isConnection ? nil : TrafficSummary(exchange)
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 statusBadge(exchange)
-                Text(summary.model ?? exchange.path)
+                Text(summary.map { $0.model ?? exchange.path } ?? exchange.address + exchange.path)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer()
                 if exchange.isFinished {
                     Text(String(format: "%.1fs", exchange.duration ?? 0))
@@ -200,8 +211,13 @@ struct TrafficView: View {
                 Text(exchange.started, format: .dateTime.hour().minute().second())
                 Text(cardName(exchange.cardID))
                     .lineLimit(1)
-                if let input = summary.inputTokens {
-                    Text("\(input) in · \(summary.outputTokens ?? 0) out")
+                if let process = exchange.process {
+                    Text(process).lineLimit(1)
+                }
+                if let input = summary?.inputTokens {
+                    Text("\(input) in · \(summary?.outputTokens ?? 0) out")
+                } else if exchange.isConnection, !exchange.blocked {
+                    Text("↑ \(Self.bytes(exchange.bytesSent)) ↓ \(Self.bytes(exchange.bytesReceived))")
                 }
             }
             .font(.caption)
@@ -212,24 +228,36 @@ struct TrafficView: View {
 
     private func statusBadge(_ exchange: TrafficExchange) -> some View {
         let status = exchange.status
-        let color: Color = exchange.error != nil ? .red
+        let color: Color = exchange.error != nil || exchange.blocked ? .red
             : status.map { (200..<300).contains($0) ? .green : .orange } ?? .secondary
-        return Text(status.map { String($0) } ?? "…")
+        // A tunnel's own status says nothing about the encrypted requests inside it.
+        let label = exchange.blocked ? "BLOCKED"
+            : exchange.error != nil && exchange.isConnection ? "FAILED"
+            : exchange.method == "CONNECT" && status != nil ? "HTTPS"
+            : status.map { String($0) } ?? "…"
+        return Text(label)
             .font(.system(size: 10, weight: .bold, design: .monospaced))
             .foregroundStyle(color)
             .padding(.horizontal, 4)
             .background(RoundedRectangle(cornerRadius: 4).fill(color.opacity(0.15)))
     }
 
-    private func cardName(_ id: UUID) -> String {
-        cards.first { $0.id == id }?.name ?? "Closed card"
+    private func cardName(_ id: UUID?) -> String {
+        guard let id else { return "Unknown card" }
+        return cards.first { $0.id == id }?.name ?? "Closed card"
+    }
+
+    private static func bytes(_ count: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
     }
 
     // MARK: - Detail
 
     @ViewBuilder
     private var detail: some View {
-        if let exchange = selected {
+        if let exchange = selected, exchange.isConnection {
+            connectionView(exchange)
+        } else if let exchange = selected, let provider = exchange.provider {
             VStack(spacing: 0) {
                 HStack {
                     Picker("Show", selection: $tab) {
@@ -239,7 +267,7 @@ struct TrafficView: View {
                     .labelsHidden()
                     .fixedSize()
                     Spacer()
-                    Text("\(exchange.method) \(exchange.provider.name) \(exchange.path)")
+                    Text("\(exchange.method) \(provider.name) \(exchange.path)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -277,6 +305,47 @@ struct TrafficView: View {
         let tab: Tab
         let finished: Bool
         let size: Int
+    }
+
+    /// A proxied connection: who made it and how much went each way. HTTPS keeps the rest encrypted.
+    private func connectionView(_ exchange: TrafficExchange) -> some View {
+        let isTunnel = exchange.method == "CONNECT"
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+                    GridRow { Text("Card").foregroundStyle(.secondary); Text(cardName(exchange.cardID)) }
+                    GridRow { Text("Program").foregroundStyle(.secondary); Text(exchange.process ?? "unknown") }
+                    GridRow { Text("Host").foregroundStyle(.secondary); Text(exchange.host) }
+                    GridRow { Text("Port").foregroundStyle(.secondary); Text(String(exchange.port)) }
+                    GridRow {
+                        Text("Kind").foregroundStyle(.secondary)
+                        Text((isTunnel ? "HTTPS" : "HTTP \(exchange.method) \(exchange.path)")
+                            + (exchange.isAgent ? " · agent service" : ""))
+                    }
+                    GridRow {
+                        Text("Status").foregroundStyle(.secondary)
+                        Text(exchange.blocked ? "Blocked: a Strict card may only reach agent services"
+                             : exchange.error ?? (exchange.isFinished ? "Closed" : "Open")
+                                + (isTunnel ? "" : exchange.status.map { " · \($0)" } ?? ""))
+                    }
+                    GridRow { Text("Sent").foregroundStyle(.secondary); Text(Self.bytes(exchange.bytesSent)) }
+                    GridRow { Text("Received").foregroundStyle(.secondary); Text(Self.bytes(exchange.bytesReceived)) }
+                    GridRow {
+                        Text("Duration").foregroundStyle(.secondary)
+                        Text(exchange.duration.map { String(format: "%.1fs", $0) } ?? "still open")
+                    }
+                }
+                if isTunnel && !exchange.blocked {
+                    Text("HTTPS is encrypted between the program and \(exchange.host), so Shade sees only the host and "
+                        + "how much was sent. Calls to the Anthropic and OpenAI APIs are recorded in full instead.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+        }
     }
 
     private func summaryView(_ exchange: TrafficExchange) -> some View {
