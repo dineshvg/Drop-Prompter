@@ -236,16 +236,20 @@ struct ContentView: View {
         let cardID = settings.selectedCardID
         let repo = terminals.repos[cardID]
         let sandbox = settings.currentCard.sandboxConfig
+        let recordTraffic = settings.currentCard.recordsTraffic
         return VStack(spacing: 0) {
             if let sandbox {
                 sandboxBar(sandbox)
+                Divider().opacity(0.4)
+            } else if recordTraffic {
+                recordedBar
                 Divider().opacity(0.4)
             }
             if let repo {
                 repoBar(repo)
                 Divider().opacity(0.4)
             }
-            TerminalPane(sessions: terminals, cardID: cardID, sandbox: sandbox)
+            TerminalPane(sessions: terminals, cardID: cardID, sandbox: sandbox, recordTraffic: recordTraffic)
                 .id(cardID)
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
@@ -261,16 +265,11 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .help(sandbox.root.path)
             if sandbox.recordTraffic {
-                Label("Recorded", systemImage: "record.circle")
-                    .foregroundStyle(.orange)
-                    .help("Calls to the Anthropic and OpenAI APIs go through Shade and are recorded")
+                recordedLabel
             }
             Spacer()
             if sandbox.recordTraffic {
-                Button { showAgentTraffic(for: settings.selectedCardID) } label: {
-                    Label("Agent Traffic", systemImage: "arrow.left.arrow.right")
-                }
-                .help("What this card's agent sent to its model, and what came back")
+                agentTrafficButton
             }
             Button { showBlockedActions() } label: { Label("Blocked Actions", systemImage: "list.bullet.rectangle") }
                 .help("Open a terminal card that lists what the sandbox denies, live")
@@ -279,6 +278,33 @@ struct ContentView: View {
         .font(.callout)
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
+    }
+
+    /// Shown above a terminal card that records its traffic without a sandbox.
+    private var recordedBar: some View {
+        HStack(spacing: 10) {
+            recordedLabel
+            Spacer()
+            agentTrafficButton
+        }
+        .buttonStyle(.borderless)
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+    }
+
+    private var recordedLabel: some View {
+        Label("Recorded", systemImage: "record.circle")
+            .foregroundStyle(.orange)
+            .help("This card's network calls go through Shade and are recorded: model calls in full, "
+                + "other connections by host and size")
+    }
+
+    private var agentTrafficButton: some View {
+        Button { showAgentTraffic(for: settings.selectedCardID) } label: {
+            Label("Agent Traffic", systemImage: "arrow.left.arrow.right")
+        }
+        .help("What this card's programs sent over the network, and what came back")
     }
 
     /// Asks for the folder the agent may change, then opens a sandboxed terminal card in it.
@@ -454,7 +480,7 @@ struct ContentView: View {
                     }
                     Divider()
                     Toggle("Record Agent Traffic", isOn: $settings.recordAgentTraffic)
-                    Text("Shows what agents send to their model, in an Agent Traffic card")
+                    Text("New terminal cards, sandboxed or not, show their network calls in an Agent Traffic card")
                 } label: {
                     Image(systemName: "lock.shield")
                 }
@@ -485,6 +511,10 @@ struct ContentView: View {
                     .foregroundStyle(.green)
                     .help("Sandboxed: \(card.sandbox?.name ?? ""), may change only \(card.sandboxRoot ?? "")"
                         + (card.recordTraffic == true ? " · agent traffic recorded" : ""))
+            } else if card.recordsTraffic {
+                Image(systemName: "record.circle").font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .help("Terminal · agent traffic recorded")
             } else if card.kind != .notes {
                 Image(systemName: card.kind == .terminal ? "apple.terminal"
                       : card.kind == .traffic ? "arrow.left.arrow.right" : "doc.text").font(.system(size: 10))
@@ -909,6 +939,13 @@ struct SettingsPopover: View {
                 Slider(value: $settings.heightFraction, in: Settings.heightRange) { Text("Height") }
                 Toggle("Hide from screen sharing", isOn: $settings.hideFromScreenShare)
                 Text("Best effort: some capture tools on recent macOS versions ignore this. Test it with your meeting app first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Agent Traffic") {
+                TextField("Extra agent hosts", text: $settings.extraAgentHosts, prompt: Text("e.g. api.mistral.ai, ollama.example.com"))
+                Text("Calls to these hosts, and their subdomains, show under Agents, and Strict cards may reach them. "
+                    + "Built in: " + AgentTraffic.builtInAgentHosts.joined(separator: ", ") + ".")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

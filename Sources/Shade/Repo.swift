@@ -171,6 +171,82 @@ enum ProcessDirectory {
     }
 }
 
+/// Which process has a TCP connection open, read from the kernel like `lsof` does. Agent Traffic uses it to tell
+/// which card a proxied connection came from, without trusting anything the program sends.
+enum SocketOwner {
+    /// Searches the given shells and everything they started for the process connected from `localPort` to
+    /// `remotePort` on this Mac.
+    static func find(localPort: UInt16, remotePort: UInt16, under shells: Set<pid_t>) -> (pid: pid_t, shell: pid_t)? {
+        guard !shells.isEmpty else { return nil }
+        var children: [pid_t: [pid_t]] = [:]
+        for pid in allProcesses() {
+            var info = proc_bsdshortinfo()
+            let size = Int32(MemoryLayout<proc_bsdshortinfo>.size)
+            guard proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &info, size) == size else { continue }
+            children[pid_t(info.pbsi_ppid), default: []].append(pid)
+        }
+        for shell in shells {
+            var pending = [shell]
+            while let pid = pending.popLast() {
+                if hasConnection(pid, localPort: localPort, remotePort: remotePort) { return (pid, shell) }
+                pending += children[pid] ?? []
+            }
+        }
+        return nil
+    }
+
+    /// The name a process was started as ("claude"), from its first argument. Its executable's name can differ:
+    /// Claude Code's is its version number.
+    static func name(of pid: pid_t) -> String? {
+        var mib = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        if sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size {
+            var arguments = [UInt8](repeating: 0, count: size)
+            if sysctl(&mib, 3, &arguments, &size, nil, 0) == 0 {
+                // An argument count, the executable path, padding, then the arguments.
+                let afterCount = arguments.dropFirst(MemoryLayout<Int32>.size)
+                let afterPath = afterCount.drop { $0 != 0 }.drop { $0 == 0 }
+                let first = String(decoding: afterPath.prefix { $0 != 0 }, as: UTF8.self)
+                let name = (first as NSString).lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+                if !name.isEmpty { return name }
+            }
+        }
+        var name = [CChar](repeating: 0, count: 256)
+        return proc_name(pid, &name, UInt32(name.count)) > 0 ? String(cString: name) : nil
+    }
+
+    private static func allProcesses() -> [pid_t] {
+        let count = proc_listallpids(nil, 0)
+        guard count > 0 else { return [] }
+        // Leave room for processes started in between.
+        var pids = [pid_t](repeating: 0, count: Int(count) + 64)
+        let found = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        return found > 0 ? Array(pids.prefix(Int(found))).filter { $0 > 0 } : []
+    }
+
+    private static func hasConnection(_ pid: pid_t, localPort: UInt16, remotePort: UInt16) -> Bool {
+        let size = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard size > 0 else { return false }
+        let stride = MemoryLayout<proc_fdinfo>.stride
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(size) / stride)
+        let used = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, size)
+        guard used > 0 else { return false }
+        for fd in fds.prefix(Int(used) / stride) where fd.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
+            var socket = socket_fdinfo()
+            let socketSize = Int32(MemoryLayout<socket_fdinfo>.size)
+            guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDSOCKETINFO, &socket, socketSize) == socketSize,
+                  socket.psi.soi_kind == SOCKINFO_TCP else { continue }
+            // Ports are kept in network byte order.
+            let addresses = socket.psi.soi_proto.pri_tcp.tcpsi_ini
+            if UInt16(bigEndian: UInt16(truncatingIfNeeded: addresses.insi_lport)) == localPort,
+               UInt16(bigEndian: UInt16(truncatingIfNeeded: addresses.insi_fport)) == remotePort {
+                return true
+            }
+        }
+        return false
+    }
+}
+
 // MARK: - Code editors
 
 struct CodeEditor: Identifiable, Hashable {

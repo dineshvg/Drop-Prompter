@@ -50,6 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.$hideFromScreenShare
             .sink { [weak self] in self?.panel.sharingType = $0 ? .none : .readOnly }
             .store(in: &subscriptions)
+        settings.$extraAgentHosts
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                AgentTraffic.shared.extraAgentHosts = self.settings.extraAgentHostList
+            }
+            .store(in: &subscriptions)
         settings.$showInDock
             .dropFirst()
             .sink { NSApp.setActivationPolicy($0 ? .regular : .accessory) }
