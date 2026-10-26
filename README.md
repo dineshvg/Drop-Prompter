@@ -1,73 +1,134 @@
 # Drop Prompter
 
-A personal macOS menu-bar tool: a translucent notes panel that slides down from the top of the screen
-(like iTerm2's hotkey window). Paste talking points before a meeting, toggle it with a hotkey, and
-optionally show an on-device translation side by side. Terminal cards run your shell right inside the panel.
+**Your talking points, one keystroke away: in every meeting, on top of every app.**
+
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)
+![Swift](https://img.shields.io/badge/Swift-SwiftUI%20%2B%20AppKit-orange?logo=swift)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue)
+
+Drop Prompter is a small, native macOS app that slides a translucent notes panel down from the top of your
+screen, like iTerm2's hotkey window, but for what you want to *say*. Press **⌃Space** in any app and your notes
+appear. Press it again and they're gone. Your meeting app stays in front the whole time.
+
+Keep a card per meeting, read a live translation next to your notes, and run Claude Code, Copilot CLI or any
+other command in a terminal card without switching windows.
+
+<!-- Screenshots: docs/screenshots/*.png, added once captured. -->
+
+## Why Drop Prompter
+
+- **Always within reach.** One global shortcut, from any app, over full-screen apps and on every Space.
+  There's no window to find, and it's gone again just as fast.
+- **Doesn't get in the way.** The panel takes your typing without stealing focus from Teams, Zoom or your IDE.
+  The background is see-through, so you can still see what's behind it.
+- **Speak in another language with confidence.** Write your points in one language and read them in another,
+  side by side. Translation runs on-device with Apple's Translation framework: free, no account, and your text
+  never leaves your Mac.
+- **More than notes.** Terminal cards run your shell right in the panel. Each card's tab shows the live status
+  that tools like Claude Code and Copilot CLI write to the terminal title.
+- **Native, small and private.** Swift, SwiftUI and AppKit, no Electron. No account, no analytics, no
+  telemetry. Everything stays on your Mac.
 
 ## Features
 
-- A welcome screen explains the app and its shortcuts the first time the panel opens. Open it again with **?**
-  in the toolbar or **Welcome & Shortcuts** in the menu bar icon.
-- **⌃Space** (configurable) toggles the panel from any app, including full-screen apps and every Space.
-  **Esc** hides it.
-- Translucent blurred background with an opacity slider; the text itself stays fully opaque.
-- **Themes**: Dark, Light and Paper (a warm, yellowish tone with brown text), from the palette button in the
-  toolbar or ⚙︎ › Appearance. Terminal cards follow the theme.
-- **Cards**: keep several notes side by side as tabs. **+** (⌘T) adds a notes card, **⌘1…⌘9** switches, **×** closes
-  (it asks first if the card has text). A card's tab shows its first line, or the name you give it: double-click
-  the tab, or right-click › Rename (an empty name goes back to the automatic title). Everything is saved
-  automatically.
-- **Terminal cards** (⇧⌘T, or the terminal button next to **+**) run your login shell inside the panel, starting in
-  your home folder. Each card has its own shell, which keeps running while the panel is hidden or another card is
-  shown.
-  - The tab shows the title the running program sets, so tools like Claude Code or Copilot CLI can show their
-    status and progress there. A name you give the card takes precedence.
-  - A dot on the tab means new output arrived while the card wasn't on screen.
-  - Closing a terminal card asks first and names the program that would be stopped (for example `claude`).
-    Quitting the app does the same while anything is still running.
-  - Shells don't survive quitting the app or a restart; the cards do, and start a fresh shell.
-  - Esc goes to the terminal (for vim and others) instead of hiding the panel; use the shortcut to hide it.
-- **Resize** by dragging the grip in the middle of the bottom edge (height) or the bottom-right corner (width and
-  height).
-  The panel stays centered under the menu bar and remembers its size.
-- Font size −/+, panel width/height in ⚙︎.
-- **Translate** shows a live translation next to your text, line by line, using Apple's on-device
-  Translation framework: free, no account, and the text never leaves your Mac. Pick the source language
-  (or auto-detect) and the target language in the toolbar.
-- **🌐** opens the text in translate.google.com instead (this one does send the text to Google).
-- "Hide from screen sharing" is on by default (`NSWindow.sharingType = .none`). This is best effort: some
-  capture paths on macOS 15+ ignore it, so check it with Teams/Zoom before relying on it.
-- The panel takes keyboard focus without activating the app, so your meeting app stays frontmost.
+### Notes that drop down
+- **⌃Space** (configurable) shows and hides the panel from any app; **Esc** hides it too.
+- **Cards** keep separate notes as tabs, for example one per meeting, talk or topic. **⌘T** adds one,
+  **⌘1…⌘9** switches. Double-click a tab to rename it; otherwise it shows the card's first line.
+- Everything is saved as you type and comes back after a restart.
+- A larger or smaller font, adjustable background opacity, and a panel you can **resize** by dragging its bottom
+  edge or corner. It stays centered under the menu bar.
 
-## Build and run (macOS 15+, Xcode 16+ or matching Command Line Tools)
+### Live translation
+- Turn on **Translate** to see a translation next to your notes, updated as you type and kept line by line so
+  your structure stays intact.
+- Choose the source language (or auto-detect) and the target language: German, English, French, Spanish,
+  Italian, Dutch, Polish, Turkish, Portuguese, Hindi, Japanese and Chinese.
+- Runs fully on-device. The 🌐 button can also open the text in Google Translate if you prefer it (that one does
+  send the text to Google).
+
+### Terminal cards
+- **⇧⌘T** opens a terminal card with your own login shell, profile, aliases and tools.
+- Each card has its own shell, which keeps running while the panel is hidden or you're on another card.
+- The tab shows the title the running program sets, so you can follow Claude Code or Copilot CLI progress at a
+  glance. A dot tells you a background card has new output.
+- Closing a card or quitting the app asks first and names what would be stopped, for example
+  *"Close terminal while “claude” is running?"*
+
+### Make it yours
+- **Themes:** Dark, Light, and Paper, a warm, yellowish tone that's easy on the eyes. Terminal cards follow
+  the theme.
+- **Hide from screen sharing** (on by default) keeps the panel out of most screen shares and recordings. It's
+  best effort; see [Tips](#tips-and-troubleshooting).
+- **Launch at login**, quietly in the menu bar until you need it.
+- A short **welcome screen** explains the basics on first launch; open it again any time with **?**.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| **⌃Space** | Show or hide the panel, from any app (configurable in ⚙︎) |
+| **Esc** | Hide the panel (in a terminal card, Esc goes to the terminal) |
+| **⌘T** | New notes card |
+| **⇧⌘T** | New terminal card |
+| **⌘1 … ⌘9** | Switch to card 1 … 9 |
+| **⌘C ⌘V ⌘Z** | Copy, paste, undo |
+| Double-click a tab | Rename the card |
+
+## Install
+
+Requirements: macOS 15 or later and Xcode 16+ (or matching Command Line Tools).
 
 ```bash
-./scripts/install.sh   # builds, moves the app to /Applications and starts it
+git clone https://github.com/dineshvg/Drop-Prompter.git
+cd Drop-Prompter
+./scripts/install.sh
 ```
 
-After that, start it like any other app (Spotlight, Launchpad, Finder). Opening it while it's already running
-brings the panel down. To only build without installing: `./scripts/bundle.sh` (output in `build/`).
+`install.sh` builds the app, moves it to `/Applications` and starts it. From then on, start it like any other
+app from Spotlight, Launchpad or Finder, or turn on ⚙︎ › **Launch at login**. To update, run
+`git pull && ./scripts/install.sh` again.
 
-For development: `swift run` (or `open Package.swift` in Xcode).
+For development: `swift run`, or `open Package.swift` in Xcode. `./scripts/bundle.sh` builds the app into `build/`
+without installing it.
 
-To start it at login, turn on ⚙︎ › **Launch at login**. At login it starts hidden in the menu bar; press ⌃Space to
-bring the panel down. Cards and settings are saved automatically, so everything is back after a restart.
+## Privacy
 
-## Translation languages
+- No account, no analytics, no network calls of its own.
+- Notes and settings are stored locally in the app's preferences.
+- Translation uses Apple's on-device Translation framework. The only feature that sends text anywhere is the 🌐
+  button, which opens Google Translate in your browser.
+- Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app.
 
-The first time you translate a language pair, macOS asks to download it. Downloaded languages are managed in
-System Settings › General › Language & Region › Translation Languages. Apple's Translation supports fewer
-languages than Google Translate; the toolbar lists a subset that it supports.
+## Tips and troubleshooting
 
-## Changing the shortcut
+**The shortcut does nothing.** macOS uses ⌃Space for "Select the previous input source" by default and takes it
+before any app sees it. Drop Prompter detects this and shows a banner. Either turn that shortcut off in System
+Settings › Keyboard › Keyboard Shortcuts › Input Sources, or pick ⌃⇧Space, ⌃⌥Space, ⌃\` or ⌥\` in ⚙︎ › Shortcut.
+The app also tells you when another app has already taken a combination.
 
-Pick another show/hide shortcut in ⚙︎ › Shortcut (⌃Space, ⌃⇧Space, ⌃⌥Space, ⌃\` or ⌥\`). The app checks whether
-the combination is free:
+**Is the panel really hidden in screen shares?** "Hide from screen sharing" uses `NSWindow.sharingType = .none`.
+Some capture methods on recent macOS versions ignore it, so check it once with your meeting app before relying on
+it.
 
-- **Used by another app**: it can't be registered; pick another one.
-- **Also a macOS shortcut**: macOS takes it first and the app never sees it. ⌃Space is "Select the previous input
-  source" by default. Turn it off in System Settings › Keyboard › Keyboard Shortcuts › Input Sources, or pick
-  another shortcut. A banner in the panel tells you when this applies.
+**Translation asks to download a language.** That's macOS fetching the on-device model the first time you use a
+language pair. Manage downloaded languages in System Settings › General › Language & Region › Translation
+Languages.
+
+**Terminal cards after a restart.** The cards come back, each with a fresh shell; running programs don't survive
+quitting the app.
+
+## Contributing
+
+Issues and pull requests are welcome. The app is a small Swift package; the main pieces are:
+
+| File | What it does |
+|---|---|
+| `AppDelegate.swift` | Panel, menu bar item, show/hide animation, shortcut, resizing |
+| `ContentView.swift` | Toolbar, cards, editor, translation, settings |
+| `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
+| `HotKey.swift` | Global shortcut and conflict detection |
+| `Theme.swift` | Dark, Light and Paper themes |
 
 ## License
 
