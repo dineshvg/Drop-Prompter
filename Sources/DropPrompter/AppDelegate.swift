@@ -4,6 +4,8 @@ import Combine
 import SwiftTerm
 import SwiftUI
 
+/// Everything here is UI work on the main thread.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = Settings.shared
     private let panel = PromptPanel.make()
