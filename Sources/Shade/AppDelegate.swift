@@ -206,8 +206,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        // A window with its top third pulled down, like the panel itself.
-        statusItem.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Shade")
+        statusItem.button?.image = MenuBarIcon.image(active: false)
+        statusItem.button?.toolTip = "Shade (\(settings.hotKey.label))"
+        // Shows a dot on the icon while a command runs in a terminal card.
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateStatusIcon() }
+        }
         let menu = NSMenu()
         let toggleItem = menu.addItem(withTitle: "Show / Hide   \(settings.hotKey.label)",
                                       action: #selector(toggle), keyEquivalent: "")
@@ -220,6 +224,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Shade", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    private var statusIconActive = false
+
+    private func updateStatusIcon() {
+        let running = TerminalSessions.shared.runningPrograms
+        guard running.isEmpty == statusIconActive else { return }
+        statusIconActive = !running.isEmpty
+        statusItem.button?.image = MenuBarIcon.image(active: statusIconActive)
+        statusItem.button?.toolTip = running.isEmpty
+            ? "Shade (\(settings.hotKey.label))"
+            : "Shade: running " + running.map { "“\($0)”" }.joined(separator: ", ")
     }
 
     // MARK: - Show / hide

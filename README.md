@@ -218,7 +218,8 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |
 | `HotKey.swift` | Global shortcut and conflict detection |
 | `Theme.swift` | Dark, Light and Paper themes |
-| `scripts/make_icon.py` | Draws the app icon (`Resources/AppIcon.png` / `.icns`) with Pillow |
+| `scripts/stitch_icon.py` | Builds the app icon (`Resources/AppIcon.png` / `.icns`) from the Google Stitch render in `Resources/IconSources` |
+| `MenuBarIcon.swift` | The menu bar symbol, with a dot while a terminal command runs |
 
 ## License
 
