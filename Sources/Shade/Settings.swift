@@ -25,8 +25,8 @@ final class Settings: ObservableObject {
     /// Bundle ID of the editor for "Open in…"; empty means the macOS default app.
     @Published var editorBundleID: String { didSet { save(editorBundleID, "editorBundleID") } }
     @Published var syntaxHighlighting: Bool { didSet { save(syntaxHighlighting, "syntaxHighlighting") } }
-    /// Whether new sandboxed terminal cards route their traffic through the inspector.
-    @Published var inspectSandboxedTraffic: Bool { didSet { save(inspectSandboxedTraffic, "inspectSandboxedTraffic") } }
+    /// Whether new sandboxed terminal cards record their model API calls (Agent Traffic).
+    @Published var recordAgentTraffic: Bool { didSet { save(recordAgentTraffic, "recordAgentTraffic") } }
     /// Opacity of the solid background behind code and terminals, separate from the see-through panel.
     @Published var codeBackgroundOpacity: Double { didSet { save(codeBackgroundOpacity, "codeBackgroundOpacity") } }
     static let codeBackgroundRange = 0.3...1.0
@@ -72,7 +72,7 @@ final class Settings: ObservableObject {
         theme = d.string(forKey: "theme").flatMap(Theme.init(rawValue:)) ?? .dark
         editorBundleID = d.string(forKey: "editorBundleID") ?? ""
         syntaxHighlighting = d.object(forKey: "syntaxHighlighting") as? Bool ?? true
-        inspectSandboxedTraffic = d.bool(forKey: "inspectSandboxedTraffic")
+        recordAgentTraffic = d.bool(forKey: "recordAgentTraffic")
         codeBackgroundOpacity = d.object(forKey: "codeBackgroundOpacity") as? Double ?? 0.75
         highlightThemes = d.dictionary(forKey: "highlightThemes") as? [String: String] ?? [:]
         showSidebar = d.bool(forKey: "showSidebar")
@@ -127,7 +127,7 @@ final class Settings: ObservableObject {
     // MARK: - Cards
 
     struct Card: Codable, Identifiable, Equatable {
-        enum Kind: String, Codable { case notes, terminal, file }
+        enum Kind: String, Codable { case notes, terminal, file, traffic }
 
         var id = UUID()
         var kind: Kind
@@ -145,14 +145,14 @@ final class Settings: ObservableObject {
         /// Set for sandboxed terminal cards, with the folder they may change.
         var sandbox: SandboxLevel?
         var sandboxRoot: String?
-        var inspectTraffic: Bool?
+        var recordTraffic: Bool?
 
         static let plainText = "plaintext"
 
         var sandboxConfig: SandboxConfig? {
             guard kind == .terminal, let sandbox, let sandboxRoot else { return nil }
             return SandboxConfig(level: sandbox, root: URL(fileURLWithPath: sandboxRoot, isDirectory: true),
-                                 inspectTraffic: inspectTraffic == true)
+                                 recordTraffic: recordTraffic == true)
         }
 
         init(kind: Kind = .notes, text: String = "", filePath: String? = nil, repoRoot: String? = nil) {
@@ -175,7 +175,7 @@ final class Settings: ObservableObject {
             language = try container.decodeIfPresent(String.self, forKey: .language)
             sandbox = try container.decodeIfPresent(SandboxLevel.self, forKey: .sandbox)
             sandboxRoot = try container.decodeIfPresent(String.self, forKey: .sandboxRoot)
-            inspectTraffic = try container.decodeIfPresent(Bool.self, forKey: .inspectTraffic)
+            recordTraffic = try container.decodeIfPresent(Bool.self, forKey: .recordTraffic)
         }
 
         /// Tab label: the user's name if set; otherwise the running program's title for terminals,
@@ -187,6 +187,8 @@ final class Settings: ObservableObject {
                 return Self.shortened(terminalTitle ?? "Terminal", limit: 32)
             case .file:
                 return Self.shortened(filePath.map { ($0 as NSString).lastPathComponent } ?? fallback, limit: 28)
+            case .traffic:
+                return "Agent Traffic"
             case .notes:
                 let line = text.split(separator: "\n").lazy
                     .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -219,7 +221,7 @@ final class Settings: ObservableObject {
         card.name = name
         card.sandbox = sandbox?.level
         card.sandboxRoot = sandbox?.root.path
-        card.inspectTraffic = sandbox?.inspectTraffic
+        card.recordTraffic = sandbox?.recordTraffic
         card.groupID = currentCard.groupID
         cards.append(card)
         keepGroupsTogether()
@@ -237,6 +239,15 @@ final class Settings: ObservableObject {
             cards.append(card)
             keepGroupsTogether()
             selectedCardID = card.id
+        }
+    }
+
+    /// Shows the Agent Traffic card, creating it if needed.
+    func openTrafficCard() {
+        if let existing = cards.first(where: { $0.kind == .traffic }) {
+            selectedCardID = existing.id
+        } else {
+            addCard(kind: .traffic)
         }
     }
 

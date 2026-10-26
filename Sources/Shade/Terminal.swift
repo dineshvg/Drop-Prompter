@@ -35,6 +35,8 @@ final class TerminalSessions: ObservableObject {
     @Published private(set) var repos: [UUID: RepoStatus] = [:]
 
     private var sessions: [UUID: TerminalSession] = [:]
+    /// Relay that records model API calls of cards with Record Agent Traffic.
+    let agentTraffic = AgentTraffic.shared
     private var repoRefreshes: [UUID: Task<Void, Never>] = [:]
     private(set) var theme: Theme = .dark
     private(set) var backgroundOpacity: Double = 0.75
@@ -195,27 +197,21 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         view.feed(text: "Shade: sandboxed shell (\(sandbox.level.name)). Writes are limited to "
             + "\(sandbox.root.path), temp and tool caches; keys and credentials can't be read.\r\n")
 
-        guard sandbox.inspectTraffic else {
-            launchSandboxed(shell: shell, profile: profile, root: sandbox.root, environment: environment)
-            return
-        }
-        // Inspected: start only once the inspector runs, so no request can slip past it.
-        view.feed(text: "Shade: starting the traffic inspector…\r\n")
-        let baseEnvironment = environment // a var can't be captured by the task
-        Task { [weak self] in
-            let inspection = await TrafficInspector.shared.environment()
-            guard let self, !self.isClosed else { return }
-            guard let inspection else {
-                let reason = TrafficInspector.shared.failureMessage ?? "The inspector didn't start."
-                self.view.feed(text: "Shade: \(reason) The shell was not started.\r\n")
+        if sandbox.recordTraffic {
+            // Recorded: model calls go through Shade's relay. If it can't run, don't start the shell at all.
+            guard let relay = owner?.agentTraffic.environment(for: cardID) else {
+                let reason = owner?.agentTraffic.listenerError ?? "Agent Traffic couldn't start."
+                view.feed(text: "Shade: \(reason) The shell was not started.\r\n")
                 return
             }
-            let address = TrafficInspector.shared.webURL?.absoluteString ?? "http://127.0.0.1:\(TrafficInspector.webPort)/"
-            self.view.feed(text: "Shade: HTTP(S) traffic goes through the inspector. See it with “Open Inspector” "
-                + "above, the menu bar icon, or in your browser: \(address)\r\n")
-            self.launchSandboxed(shell: shell, profile: profile, root: sandbox.root,
-                                 environment: baseEnvironment.merging(inspection) { _, inspected in inspected })
+            environment.merge(relay) { _, recorded in recorded }
+            if sandbox.level == .strict {
+                // Strict only allows this Mac, so skip Claude Code's other services (telemetry, update checks).
+                environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+            }
+            view.feed(text: "Shade: calls to the Anthropic and OpenAI APIs are recorded. See them in Agent Traffic.\r\n")
         }
+        launchSandboxed(shell: shell, profile: profile, root: sandbox.root, environment: environment)
     }
 
     private func launchSandboxed(shell: String, profile: URL, root: URL, environment: [String: String]) {

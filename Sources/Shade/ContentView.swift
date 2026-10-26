@@ -7,7 +7,7 @@ struct ContentView: View {
     @ObservedObject var settings: Settings
     @ObservedObject var terminals: TerminalSessions
     @ObservedObject var buffers: FileBuffers
-    @ObservedObject var inspector: TrafficInspector
+    @ObservedObject var traffic: AgentTraffic
     let onClose: () -> Void
 
     @State private var translation = ""
@@ -173,6 +173,19 @@ struct ContentView: View {
                 )
                 .id(card.id)
             }
+        case .traffic:
+            TrafficView(
+                traffic: traffic,
+                cards: settings.cards.enumerated()
+                    .filter { $0.element.kind == .terminal }
+                    .map { TrafficCard(id: $0.element.id,
+                                       name: $0.element.title(fallback: "Card \($0.offset + 1)",
+                                                              terminalTitle: terminals.titles[$0.element.id])) },
+                theme: settings.theme,
+                highlightTheme: settings.highlightTheme(for: settings.theme),
+                codeSize: codeSize,
+                codeBackgroundOpacity: settings.codeBackgroundOpacity
+            )
         }
     }
 
@@ -197,7 +210,7 @@ struct ContentView: View {
             if let root = terminals.repos[card.id]?.root { return root }
         case .file:
             if let path = card.repoRoot { return URL(fileURLWithPath: path, isDirectory: true) }
-        case .notes:
+        case .notes, .traffic:
             break
         }
         return settings.lastRepoPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -247,16 +260,17 @@ struct ContentView: View {
             Text("may change only \(sandbox.root.lastPathComponent)")
                 .foregroundStyle(.secondary)
                 .help(sandbox.root.path)
-            if sandbox.inspectTraffic {
-                Label("Inspected", systemImage: "eye")
+            if sandbox.recordTraffic {
+                Label("Recorded", systemImage: "record.circle")
                     .foregroundStyle(.orange)
-                    .help("HTTP(S) traffic goes through the local inspector (mitmproxy)")
+                    .help("Calls to the Anthropic and OpenAI APIs go through Shade and are recorded")
             }
             Spacer()
-            if sandbox.inspectTraffic {
-                Button { inspector.openWebInterface() } label: { Label("Open Inspector", systemImage: "network") }
-                    .disabled({ if case .running = inspector.state { return false } else { return true } }())
-                    .help("Every request and response of this card, in mitmproxy's web interface")
+            if sandbox.recordTraffic {
+                Button { showAgentTraffic(for: settings.selectedCardID) } label: {
+                    Label("Agent Traffic", systemImage: "arrow.left.arrow.right")
+                }
+                .help("What this card's agent sent to its model, and what came back")
             }
             Button { showBlockedActions() } label: { Label("Blocked Actions", systemImage: "list.bullet.rectangle") }
                 .help("Open a terminal card that lists what the sandbox denies, live")
@@ -282,17 +296,13 @@ struct ContentView: View {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         settings.addCard(kind: .terminal, sandbox: SandboxConfig(
-            level: level, root: folder, inspectTraffic: settings.inspectSandboxedTraffic))
+            level: level, root: folder, recordTraffic: settings.recordAgentTraffic))
     }
 
-    /// Opens a terminal card that installs mitmproxy, so every step is visible.
-    private func installInspector() {
-        showSettings = false
-        Task {
-            let command = await Task.detached { TrafficInspector.installCommand }.value
-            let cardID = settings.addCard(kind: .terminal, name: "Install mitmproxy")
-            terminals.run(command, whenStarting: cardID)
-        }
+    /// Opens the Agent Traffic card showing one card's calls.
+    private func showAgentTraffic(for cardID: UUID) {
+        traffic.filterCardID = cardID
+        settings.openTrafficCard()
     }
 
     private func showBlockedActions() {
@@ -409,7 +419,7 @@ struct ContentView: View {
                 .popover(isPresented: $showAbout, arrowEdge: .bottom) { AboutView() }
                 .help("About Shade")
             Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }
-                .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings, highlighting: SyntaxHighlighting.shared, onInstallInspector: installInspector) }
+                .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings, highlighting: SyntaxHighlighting.shared) }
             Button(action: onClose) { Image(systemName: "chevron.up") }
                 .help("Hide (Esc / ⌃Space)")
         }
@@ -443,8 +453,8 @@ struct ContentView: View {
                         Button(level.name) { newSandboxedTerminal(level) }
                     }
                     Divider()
-                    Toggle("Inspect Traffic", isOn: $settings.inspectSandboxedTraffic)
-                    Text("Shows every request agents send, using mitmproxy")
+                    Toggle("Record Agent Traffic", isOn: $settings.recordAgentTraffic)
+                    Text("Shows what agents send to their model, in an Agent Traffic card")
                 } label: {
                     Image(systemName: "lock.shield")
                 }
@@ -474,9 +484,10 @@ struct ContentView: View {
                 Image(systemName: "lock.shield.fill").font(.system(size: 10))
                     .foregroundStyle(.green)
                     .help("Sandboxed: \(card.sandbox?.name ?? ""), may change only \(card.sandboxRoot ?? "")"
-                        + (card.inspectTraffic == true ? " · traffic inspected" : ""))
+                        + (card.recordTraffic == true ? " · agent traffic recorded" : ""))
             } else if card.kind != .notes {
-                Image(systemName: card.kind == .terminal ? "apple.terminal" : "doc.text").font(.system(size: 10))
+                Image(systemName: card.kind == .terminal ? "apple.terminal"
+                      : card.kind == .traffic ? "arrow.left.arrow.right" : "doc.text").font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
             if renamingCardID == card.id {
@@ -699,6 +710,8 @@ struct ContentView: View {
                     message: "The shell running in it will be closed."
                 )
             }
+        case .traffic:
+            removeCard(card.id) // recordings stay available from the menu bar icon
         case .file:
             if buffers.isDirty(card.id) {
                 pendingRemoval = PendingRemoval(
@@ -806,11 +819,8 @@ struct ContentView: View {
 struct SettingsPopover: View {
     @ObservedObject var settings: Settings
     @ObservedObject var highlighting: SyntaxHighlighting
-    let onInstallInspector: () -> Void
     @State private var showThemeCatalog = false
-    /// Where mitmweb is installed; nil while checking or when missing.
-    @State private var inspectorPath: String?
-    @State private var checkedInspector = false
+
     /// Read from the system each time the popover opens; macOS owns the login item.
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginItemMessage: String?
@@ -880,29 +890,6 @@ struct SettingsPopover: View {
                     + "browser build (.js) into the folder's “languages” subfolder and restart Shade.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-            Section("Traffic Inspector") {
-                if !checkedInspector {
-                    Text("Looking for mitmproxy…").foregroundStyle(.secondary)
-                } else if let inspectorPath {
-                    Label("mitmproxy is installed", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .help(inspectorPath)
-                } else {
-                    Label("mitmproxy isn't installed", systemImage: "xmark.circle")
-                        .foregroundStyle(.secondary)
-                }
-                Button(inspectorPath == nil ? "Install mitmproxy…" : "Reinstall or Update mitmproxy…",
-                       action: onInstallInspector)
-                    .disabled(!checkedInspector)
-                Text("Needed for Inspect Traffic. Opens a terminal card that runs the install, so you see every step. "
-                    + "On a work Mac, check your company's policy first: mitmproxy intercepts HTTPS traffic.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .task {
-                inspectorPath = await Task.detached { TrafficInspector.mitmwebPath }.value
-                checkedInspector = true
             }
             Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)

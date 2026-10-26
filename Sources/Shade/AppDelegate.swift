@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        TrafficInspector.shared.stop()
+        AgentTraffic.shared.stop()
     }
 
     /// Opening the app again (Finder, Spotlight, Dock) while it's running brings the panel down.
@@ -138,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings: settings,
             terminals: TerminalSessions.shared,
             buffers: FileBuffers.shared,
-            inspector: TrafficInspector.shared,
+            traffic: AgentTraffic.shared,
             onClose: { [weak self] in self?.hide() }
         ))
         content.sizingOptions = []
@@ -220,8 +220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.toggleItem = toggleItem
         let welcomeItem = menu.addItem(withTitle: "Welcome & Shortcuts", action: #selector(showWelcome), keyEquivalent: "")
         welcomeItem.target = self
-        let inspectorItem = menu.addItem(withTitle: "Open Traffic Inspector", action: #selector(openInspector), keyEquivalent: "")
-        inspectorItem.target = self
+        let trafficItem = menu.addItem(withTitle: "Agent Traffic", action: #selector(openAgentTraffic), keyEquivalent: "")
+        trafficItem.target = self
         let aboutItem = menu.addItem(withTitle: "About Shade", action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(.separator())
@@ -231,19 +231,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Show / hide
 
-    /// Opens mitmproxy's web interface if it runs; otherwise explains how to start it.
-    @objc private func openInspector() {
-        if TrafficInspector.shared.webURL != nil {
-            TrafficInspector.shared.openWebInterface()
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "The traffic inspector isn't running"
-        alert.informativeText = TrafficInspector.shared.failureMessage
-            ?? "It starts with the first inspected card: turn on Inspect Traffic in the shield menu next to +, "
-                + "then open a sandboxed terminal card."
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+    /// Shows the panel with the Agent Traffic card, listing every recorded card's calls.
+    @objc private func openAgentTraffic() {
+        AgentTraffic.shared.filterCardID = nil
+        settings.openTrafficCard()
+        show()
     }
 
     /// The standard macOS About window, with a thank-you note and a link to the repository.

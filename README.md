@@ -87,24 +87,25 @@ deprecated but still ships and which tools like Chrome and coding agents rely on
 guarantee.
 
 ### See what agents send
-Turn on **Inspect Traffic** in the 🛡 menu before opening a sandboxed terminal card, and every HTTP(S) request
-made from that card, prompts, the code and command output sent to the model and its responses, shows up in
-[mitmproxy](https://mitmproxy.org)'s web interface: click **Open Inspector** in the card's bar or **Open Traffic
-Inspector** in the menu bar icon, then click a request (for example `api.anthropic.com/v1/messages`) and read its
-*Request* and *Response* tabs. The setting applies to cards opened after you turn it on.
-- Install mitmproxy once: ⚙︎ › Traffic Inspector › **Install mitmproxy…** runs the install in a terminal card, or run
-  `pipx install mitmproxy` (or `uv tool install mitmproxy`, or `brew install mitmproxy`) yourself.
-  If Homebrew's download fails with a 403, your network may block mitmproxy's download server; the Python package
-  comes from PyPI instead. Shade starts and stops it for you (ports 18080 and 18081). On a work Mac, check your
-  company's policy first: mitmproxy is an HTTPS interception tool.
-- Only that card trusts the inspector's certificate; your Mac's trust settings stay as they are. Sandboxed programs
-  can read the certificate but not its private key.
-- **Strict + Inspect Traffic** is the auditable setup: the sandbox blocks every connection except to your Mac, so
-  an agent can only reach its backend through the inspector.
-- Covered: tools that use the standard proxy settings, such as Node (Claude Code, Copilot CLI), curl, git and
-  Python. Not covered: the JVM, so Gradle builds don't go through it (and in Strict mode can't download).
-- If mitmproxy isn't installed or doesn't start, the card doesn't start a shell, so nothing runs uninspected.
-- The captured traffic contains your code and prompts. It stays on your Mac, in mitmproxy, until you quit Shade.
+Turn on **Record Agent Traffic** in the 🛡 menu before opening a sandboxed terminal card. Everything the agent in
+that card sends to its model, and everything that comes back, shows up in an **Agent Traffic** card (the button in
+the card's bar, or **Agent Traffic** in the menu bar icon):
+- a list of calls with model, status, tokens and duration, filterable by card;
+- a **Summary** of each call: the system prompt, the last user message, the reply, and the tools offered and used;
+- the full **Request** and **Response**, pretty-printed and highlighted.
+
+How it works: the card's agent is pointed at a small relay inside Shade (`ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL`
+set to `127.0.0.1:18090`). Shade forwards each call over normal HTTPS to `api.anthropic.com` or `api.openai.com` and
+keeps a copy, streaming replies straight through. Nothing to install, no certificates.
+- **Strict + Record Agent Traffic** is the auditable setup: the sandbox blocks every connection except to your
+  Mac, so the agent can only reach its model through Shade, and every call is recorded. (In this mode Shade also
+  turns off Claude Code's non-essential traffic such as telemetry, which couldn't get out anyway.)
+- Covered: Claude Code and other tools that use the Anthropic API, and tools that honor `OPENAI_BASE_URL`. Tools
+  with a fixed API address, or other services an agent talks to, aren't recorded.
+- The relay only accepts connections from your Mac and only forwards to those two APIs. If it can't start, the
+  card doesn't start a shell, so nothing runs unrecorded.
+- Recordings stay in memory: the last 100 calls, until you click **Clear** or quit Shade. They contain your code
+  and prompts.
 
 ### See what your agent changed
 When a terminal card's shell is inside a git repository, Shade notices and shows a slim repo bar: the
@@ -188,8 +189,8 @@ without installing it.
 - Notes and settings are stored locally in the app's preferences.
 - Translation uses Apple's on-device Translation framework. The only feature that sends text anywhere is the 🌐
   button, which opens Google Translate in your browser.
-- Inspect Traffic runs mitmproxy locally and only for the cards you turn it on for; captured traffic never
-  leaves your Mac.
+- Record Agent Traffic keeps the recorded calls in memory only, for the cards you turn it on for; they never
+  leave your Mac and are gone when you quit Shade.
 - Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app. Sandboxed
   terminal cards restrict that shell and everything started in it to the project folder you chose; their profiles
   are stored in `~/Library/Application Support/Shade/Sandbox`.
@@ -206,15 +207,15 @@ work is about **what programs in terminal cards, especially AI agents, can do**.
 **A sandboxed terminal card protects against**
 - changes outside the project folder you chose, apart from temp files, tool caches and the agents' own state;
 - reading keys and credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, cloud and GitHub CLI tokens, `.netrc`, `.npmrc`,
-  `gradle.properties`, the inspector's private key, and more);
+  `gradle.properties`, and more);
 - escaping later through files that run outside the sandbox: folders on `PATH`, Gradle init scripts, git hooks and
   configuration, Claude Code's settings;
-- with **Strict**: any network connection except to your own Mac. With **Inspect Traffic**, every request that does
+- with **Strict**: any network connection except to your own Mac. With **Record Agent Traffic**, every model call that does
   go out is visible.
 
 **What it doesn't protect against** (known limits)
 - **Reading other files.** In *Project Only*, programs can still read the rest of your home folder, such as
-  documents, other repositories and app data, and send it out. Use *Strict*, ideally with *Inspect Traffic*, when
+  documents, other repositories and app data, and send it out. Use *Strict*, ideally with *Record Agent Traffic*, when
   nothing may leave your Mac.
 - **Asking other apps to act.** A sandboxed program can still open a link in your browser, or, after macOS asks you,
   control other apps with AppleScript. Those apps run outside the sandbox. Decline automation prompts you didn't
@@ -225,9 +226,9 @@ work is about **what programs in terminal cards, especially AI agents, can do**.
   macOS 15 and 26.
 - **Normal terminal cards**, which run with your full user permissions, like Terminal.app.
 
-**Traffic inspection**: captured requests contain your code and prompts. They stay in mitmproxy on your Mac. Its
-private key in `~/.mitmproxy` lets anything that has it read traffic from inspected cards, so it's kept out of
-sandboxed cards; delete the folder to start fresh.
+**Agent Traffic**: recorded calls contain your code and prompts. They stay in Shade's memory and are never
+written to disk. The relay listens only on your Mac's loopback interface and forwards only to the Anthropic and
+OpenAI APIs, so it can't be used as a general proxy.
 
 **Reporting a vulnerability**: please use GitHub's private vulnerability reporting (the repository's *Security*
 tab) rather than a public issue.
@@ -268,9 +269,9 @@ quitting the app.
 ## How Shade was built
 
 Shade was built by me, Dinesh Gangatharan, together with an AI coding assistant. I decided what Shade does and how
-it works: the features, the architecture, the security design of the sandbox and the traffic inspector, and the
+it works: the features, the architecture, the security design of the sandbox and of Agent Traffic, and the
 name. I tested every build on my Mac and reported what broke; the assistant wrote most of the code. Working that
-way is also why the sandbox and the inspector exist: I wanted to see, and limit, what coding agents do on my
+way is also why the sandbox and Agent Traffic exist: I wanted to see, and limit, what coding agents do on my
 machine.
 
 ## Contributing
@@ -283,7 +284,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
 | `Sandbox.swift` | Sandbox profiles for sandboxed terminal cards |
-| `TrafficInspector.swift` | Runs mitmproxy and sets up inspected terminal cards |
+| `AgentTraffic.swift`, `TrafficView.swift` | The relay that records model API calls, and the Agent Traffic card |
 | `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |
 | `FileBuffers.swift` | Editing, saving and conflict handling for file cards |
 | `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |
