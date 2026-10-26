@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 import Translation
 
@@ -297,9 +298,21 @@ struct ContentView: View {
 
 struct SettingsPopover: View {
     @ObservedObject var settings: Settings
+    /// Read from the system each time the popover opens; macOS owns the login item.
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var loginItemMessage: String?
 
     var body: some View {
         Form {
+            Section("General") {
+                Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, enabled in setLaunchAtLogin(enabled) }
+                if let loginItemMessage {
+                    Text(loginItemMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section("Panel") {
                 Slider(value: $settings.widthFraction, in: Settings.widthRange) { Text("Width") }
                 Slider(value: $settings.heightFraction, in: Settings.heightRange) { Text("Height") }
@@ -322,5 +335,25 @@ struct SettingsPopover: View {
         }
         .formStyle(.grouped)
         .frame(width: 360)
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        let service = SMAppService.mainApp
+        guard enabled != (service.status == .enabled) else { return }
+        do {
+            if enabled {
+                try service.register()
+            } else {
+                try service.unregister()
+            }
+            loginItemMessage = nil
+        } catch {
+            loginItemMessage = "Could not change the login item: \(error.localizedDescription)"
+        }
+        if service.status == .requiresApproval {
+            loginItemMessage = "Allow Drop Prompter in System Settings › General › Login Items."
+            SMAppService.openSystemSettingsLoginItems()
+        }
+        launchAtLogin = service.status == .enabled
     }
 }

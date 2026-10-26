@@ -32,7 +32,8 @@ brings the panel down. To only build without installing: `./scripts/bundle.sh` (
 
 For development: `swift run` (or `open Package.swift` in Xcode).
 
-To start it at login: System Settings → General → Login Items → **+** → `/Applications/DropPrompter.app`.
+To start it at login, turn on ⚙︎ › **Launch at login**. At login it starts hidden in the menu bar; press ⌃Space to
+bring the panel down. Cards and settings are saved automatically, so everything is back after a restart.
 
 ## Translation languages
 

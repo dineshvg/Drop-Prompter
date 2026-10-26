@@ -48,8 +48,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &subscriptions)
 
-        // Show the panel once at launch, so starting the app from Applications or Spotlight visibly does something.
-        show()
+        // Show the panel once when opened by hand, so starting it from Applications or Spotlight visibly
+        // does something. When macOS starts it at login, stay quietly in the menu bar.
+        if !Self.launchedAsLoginItem { show() }
+    }
+
+    /// True when macOS opened the app as a login item (the "oapp" event carries a launched-as-login-item marker).
+    private static var launchedAsLoginItem: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventID == AEEventID(kAEOpenApplication) else { return false }
+        return event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
+            == OSType(keyAELaunchedAsLogInItem)
     }
 
     /// Opening the app again (Finder, Spotlight, Dock) while it's running brings the panel down.
