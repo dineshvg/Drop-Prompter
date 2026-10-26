@@ -20,8 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMainMenu()
         buildStatusItem()
 
-        // ⌃⌥Space toggles the panel from anywhere.
-        hotKey = HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey)) { [weak self] in
+        // ⌃Space toggles the panel from anywhere.
+        hotKey = HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey)) { [weak self] in
             self?.toggle()
         }
 
@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Drop Prompter")
         let menu = NSMenu()
-        let toggleItem = menu.addItem(withTitle: "Show / Hide   ⌃⌥Space", action: #selector(toggle), keyEquivalent: "")
+        let toggleItem = menu.addItem(withTitle: "Show / Hide   ⌃Space", action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Drop Prompter", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

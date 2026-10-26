@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Translation
 
 struct ContentView: View {
     @ObservedObject var settings: Settings
@@ -9,12 +10,14 @@ struct ContentView: View {
     @State private var translationError: String?
     @State private var isTranslating = false
     @State private var showSettings = false
+    /// Setting or invalidating this makes `.translationTask` run with a fresh session.
+    @State private var translationConfig: TranslationSession.Configuration?
 
     private struct TranslationRequest: Equatable {
         let text: String
+        let source: String
         let target: String
         let enabled: Bool
-        let keyRevision: Int
     }
 
     var body: some View {
@@ -36,16 +39,19 @@ struct ContentView: View {
             }
         }
         .task(id: translationRequest) {
-            await translate(translationRequest)
+            await scheduleTranslation(translationRequest)
+        }
+        .translationTask(translationConfig) { session in
+            await translate(using: session)
         }
     }
 
     private var translationRequest: TranslationRequest {
         TranslationRequest(
             text: settings.text,
+            source: settings.sourceLanguage,
             target: settings.targetLanguage,
-            enabled: settings.showTranslation,
-            keyRevision: settings.apiKeyRevision
+            enabled: settings.showTranslation
         )
     }
 
@@ -67,6 +73,15 @@ struct ContentView: View {
 
             Toggle(isOn: $settings.showTranslation) { Label("Translate", systemImage: "character.bubble") }
                 .toggleStyle(.button)
+            Picker("Source language", selection: $settings.sourceLanguage) {
+                Text("Auto-detect").tag("")
+                Divider()
+                ForEach(Settings.languages) { Text($0.name).tag($0.code) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 120)
+            Image(systemName: "arrow.right").foregroundStyle(.secondary)
             Picker("Target language", selection: $settings.targetLanguage) {
                 ForEach(Settings.languages) { Text($0.name).tag($0.code) }
             }
@@ -78,12 +93,12 @@ struct ContentView: View {
                     NSWorkspace.shared.open(url)
                 }
             } label: { Image(systemName: "globe") }
-                .help("Open in translate.google.com (no API key needed)")
+                .help("Open in translate.google.com (sends the text to Google)")
 
             Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings) }
             Button(action: onClose) { Image(systemName: "chevron.up") }
-                .help("Hide (Esc / ⌃⌥Space)")
+                .help("Hide (Esc / ⌃Space)")
         }
         .buttonStyle(.borderless)
         .controlSize(.regular)
@@ -112,11 +127,10 @@ struct ContentView: View {
         }
     }
 
-    private func translate(_ request: TranslationRequest) async {
-        guard request.enabled else { return }
-        guard let apiKey = Keychain.get(Keychain.googleApiKey), !apiKey.isEmpty else {
-            translation = ""
-            translationError = "Add a Google Cloud Translation API key in ⚙︎, or use the 🌐 button to open translate.google.com."
+    /// Debounces edits, then (re)triggers `.translationTask`.
+    private func scheduleTranslation(_ request: TranslationRequest) async {
+        guard request.enabled else {
+            translationConfig = nil
             return
         }
         guard !request.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -124,26 +138,48 @@ struct ContentView: View {
             translationError = nil
             return
         }
-        // Debounce: a newer keystroke cancels this task before the request is sent.
-        do { try await Task.sleep(nanoseconds: 700_000_000) } catch { return }
+        // A newer keystroke cancels this task before anything is translated.
+        do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
+
+        let source = request.source.isEmpty ? nil : Locale.Language(identifier: request.source)
+        let target = Locale.Language(identifier: request.target)
+        if var config = translationConfig, config.source == source, config.target == target {
+            config.invalidate()
+            translationConfig = config
+        } else {
+            translationConfig = TranslationSession.Configuration(source: source, target: target)
+        }
+    }
+
+    /// Translates line by line so the layout of the notes is kept. Runs fully on-device; the first use
+    /// of a language pair shows a system prompt to download it.
+    private func translate(using session: TranslationSession) async {
+        var lines = settings.text.components(separatedBy: "\n")
+        let requests = lines.indices
+            .filter { !lines[$0].trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { TranslationSession.Request(sourceText: lines[$0], clientIdentifier: String($0)) }
+        guard !requests.isEmpty else { return }
 
         isTranslating = true
+        defer { isTranslating = false }
         do {
-            let result = try await GoogleTranslate.translate(request.text, to: request.target, apiKey: apiKey)
-            translation = result
+            for response in try await session.translations(from: requests) {
+                if let id = response.clientIdentifier, let index = Int(id) {
+                    lines[index] = response.targetText
+                }
+            }
+            translation = lines.joined(separator: "\n")
             translationError = nil
         } catch is CancellationError {
-        } catch let error as URLError where error.code == .cancelled {
         } catch {
-            translationError = error.localizedDescription
+            translationError = "Translation failed: \(error.localizedDescription). "
+                + "If the text is already in the target language, pick another one."
         }
-        if !Task.isCancelled { isTranslating = false }
     }
 }
 
 struct SettingsPopover: View {
     @ObservedObject var settings: Settings
-    @State private var apiKey = Keychain.get(Keychain.googleApiKey) ?? ""
 
     var body: some View {
         Form {
@@ -155,19 +191,16 @@ struct SettingsPopover: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("Google Cloud Translation") {
-                SecureField("API key", text: $apiKey)
-                HStack {
-                    Button("Save key") {
-                        Keychain.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keychain.googleApiKey)
-                        settings.apiKeyRevision += 1
-                    }
-                    Spacer()
-                    Link("Get a key", destination: URL(string: "https://console.cloud.google.com/apis/library/translate.googleapis.com")!)
-                }
-                Text("Stored in your login Keychain. Text you translate is sent to Google.")
+            Section("Translation") {
+                Text("Translation runs on-device with Apple's Translation framework; nothing is sent to a server. "
+                    + "Downloaded languages are managed in System Settings › General › Language & Region › Translation Languages.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("Open Language & Region Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
             }
         }
         .formStyle(.grouped)

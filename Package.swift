@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "DropPrompter",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS("15.0")], // Translation framework
     targets: [
         .executableTarget(name: "DropPrompter", path: "Sources/DropPrompter")
     ]
