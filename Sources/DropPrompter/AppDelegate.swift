@@ -92,14 +92,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             == OSType(keyAELaunchedAsLogInItem)
     }
 
-    /// Quitting stops every shell, so ask first while a program is still running in a terminal card.
+    /// Quitting stops every shell and drops unsaved edits, so ask first when either would be lost.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let running = TerminalSessions.shared.runningPrograms
-        guard !running.isEmpty else { return .terminateNow }
+        let unsaved = FileBuffers.shared.dirtyCount
+        guard !running.isEmpty || unsaved > 0 else { return .terminateNow }
+        var consequences: [String] = []
+        if !running.isEmpty {
+            consequences.append("stops what's running in its terminal cards: "
+                + running.map { "“\($0)”" }.joined(separator: ", "))
+        }
+        if unsaved > 0 {
+            consequences.append(unsaved == 1 ? "discards unsaved changes in 1 file" : "discards unsaved changes in \(unsaved) files")
+        }
         let alert = NSAlert()
-        alert.messageText = "Quit while programs are running?"
-        alert.informativeText = "Quitting Drop Prompter stops what's running in its terminal cards: "
-            + running.map { "“\($0)”" }.joined(separator: ", ") + "."
+        alert.messageText = "Quit Drop Prompter?"
+        alert.informativeText = "Quitting " + consequences.joined(separator: " and ") + "."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
@@ -123,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let content = NSHostingView(rootView: ContentView(
             settings: settings,
             terminals: TerminalSessions.shared,
+            buffers: FileBuffers.shared,
             onClose: { [weak self] in self?.hide() }
         ))
         content.sizingOptions = []

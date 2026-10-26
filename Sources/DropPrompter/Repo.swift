@@ -123,27 +123,35 @@ enum Repo {
     // MARK: - Files
 
     enum FileContent: Equatable {
-        case text(String)
+        case text(String, modified: Date?)
         case message(String)
     }
 
-    /// Text of a file for the viewer, or a message when it can't be shown.
+    /// Text of a file for the editor, or a message when it can't be edited safely here.
     static func load(_ url: URL) async -> FileContent {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                let modified = modificationDate(of: url)
                 guard let data = FileManager.default.contents(atPath: url.path) else {
                     continuation.resume(returning: .message("File not found: \(url.path)"))
                     return
                 }
                 if data.count > 2_000_000 {
-                    continuation.resume(returning: .message("This file is too large to preview. Open it in your editor."))
+                    continuation.resume(returning: .message("This file is too large to edit here. Open it in your editor."))
                 } else if data.prefix(8_000).contains(0) {
                     continuation.resume(returning: .message("Binary file. Open it in your editor."))
+                } else if let text = String(data: data, encoding: .utf8) {
+                    continuation.resume(returning: .text(text, modified: modified))
                 } else {
-                    continuation.resume(returning: .text(String(decoding: data, as: UTF8.self)))
+                    // Decoding leniently and saving would silently damage the file's encoding.
+                    continuation.resume(returning: .message("This file isn't UTF-8 text. Open it in your editor."))
                 }
             }
         }
+    }
+
+    static func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 }
 

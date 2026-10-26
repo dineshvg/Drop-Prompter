@@ -36,13 +36,6 @@ struct ReadOnlyText: NSViewRepresentable {
 
 @MainActor
 enum CodeText {
-    static func plain(_ text: String, size: CGFloat, theme: Theme) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: size, weight: .regular),
-            .foregroundColor: theme.codeTextColor,
-        ])
-    }
-
     /// Unified diff with added lines in green, removed in red and hunk headers in blue.
     static func diff(_ text: String, size: CGFloat, theme: Theme) -> NSAttributedString {
         let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
@@ -360,9 +353,10 @@ struct StatusBadge: View {
 
 // MARK: - File viewer
 
-/// Read-only view of one file, shown as its own card. A changed file can switch between its diff and
-/// the whole file. The view reloads by itself when the file changes on disk.
+/// One file as its own card. File mode edits it (⌘S saves); for a changed file, Changes mode shows the
+/// read-only diff. Reloads by itself when the file changes on disk.
 struct FileViewer: View {
+    let cardID: UUID
     let url: URL
     /// Uncommitted change of this file, if any.
     let change: FileChange?
@@ -370,17 +364,17 @@ struct FileViewer: View {
     let theme: Theme
     let codeSize: CGFloat
     let editorBundleID: String
+    @ObservedObject var buffers: FileBuffers
 
-    private enum Display {
-        case text(NSAttributedString)
-        case message(String)
-    }
-
-    @State private var display: Display?
+    @State private var diff: NSAttributedString?
     @State private var preferDiff = true
     @State private var reloads = 0
+    @State private var confirmOverwrite = false
+    @State private var saveError: String?
 
     private var showsDiff: Bool { preferDiff && change != nil && repoRoot != nil }
+    private var buffer: FileBuffers.Buffer? { buffers.buffers[cardID] }
+    private var isDirty: Bool { buffer?.isDirty == true }
 
     private struct LoadRequest: Equatable {
         let url: URL
@@ -391,72 +385,146 @@ struct FileViewer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text").foregroundStyle(.secondary)
-                Text(url.path)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .foregroundStyle(.secondary)
-                    .help(url.path)
-                Spacer()
-                if change != nil, repoRoot != nil {
-                    Picker("View", selection: $preferDiff) {
-                        Text("Changes").tag(true)
-                        Text("File").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
-                Button { reloads += 1 } label: { Image(systemName: "arrow.clockwise") }
-                    .help("Reload")
-                Button { CodeEditors.reveal(url) } label: { Image(systemName: "folder") }
-                    .help("Show in Finder")
-                Button { CodeEditors.open(url, with: editorBundleID) } label: {
-                    Label("Open in \(CodeEditors.name(for: editorBundleID))", systemImage: "arrow.up.forward.app")
-                }
+            header
+            if buffer?.changedOnDisk == true {
+                diskChangedBanner
             }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
             Divider().opacity(0.4)
-            switch display {
-            case .text(let text):
-                ReadOnlyText(text: text)
-            case .message(let message):
-                Text(message)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case nil:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            content
         }
         .task(id: LoadRequest(url: url, showsDiff: showsDiff, changeCode: change?.code, reloads: reloads)) {
-            // Loads now, then again whenever the file's modification date changes (an agent editing it).
-            var lastModified: Date?
-            var loaded = false
+            // Now, then every 2 seconds: picks up changes on disk (an agent editing the file).
+            var diffModified: Date?
+            var diffLoaded = false
             while !Task.isCancelled {
-                let modified = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-                if !loaded || modified != lastModified {
-                    lastModified = modified
-                    loaded = true
-                    let rendered = await render()
+                await buffers.refresh(cardID, url: url)
+                let modified = Repo.modificationDate(of: url)
+                if showsDiff, let change, let repoRoot, !diffLoaded || modified != diffModified {
+                    diffModified = modified
+                    diffLoaded = true
+                    let text = await Repo.diff(for: change, in: repoRoot)
                     guard !Task.isCancelled else { return }
-                    display = rendered
+                    diff = CodeText.diff(text.isEmpty ? "No textual changes." : text, size: codeSize, theme: theme)
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
+        .alert("The file changed on disk", isPresented: $confirmOverwrite) {
+            Button("Overwrite", role: .destructive) { save(overwrite: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saving replaces the newer version on disk with yours.")
+        }
+        .alert(
+            "Couldn't save the file",
+            isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "")
+        }
     }
 
-    private func render() async -> Display {
-        if showsDiff, let change, let repoRoot {
-            let text = await Repo.diff(for: change, in: repoRoot)
-            return .text(CodeText.diff(text.isEmpty ? "No textual changes." : text, size: codeSize, theme: theme))
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.text").foregroundStyle(.secondary)
+            Text(url.path)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .foregroundStyle(.secondary)
+                .help(url.path)
+            if isDirty {
+                Text("Edited")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
+            Spacer()
+            if change != nil, repoRoot != nil {
+                Picker("View", selection: $preferDiff) {
+                    Text("Changes").tag(true)
+                    Text("File").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            if !showsDiff, buffer != nil {
+                Button("Revert") { buffers.revert(cardID) }
+                    .disabled(!isDirty && buffer?.changedOnDisk != true)
+                    .help("Discard your edits")
+                Button("Save") { save(overwrite: false) }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(!isDirty)
+                    .help("Save (⌘S)")
+            }
+            Button { reloads += 1 } label: { Image(systemName: "arrow.clockwise") }
+                .help("Reload")
+            Button { CodeEditors.reveal(url) } label: { Image(systemName: "folder") }
+                .help("Show in Finder")
+            Button { CodeEditors.open(url, with: editorBundleID) } label: {
+                Image(systemName: "arrow.up.forward.app")
+            }
+            .help("Open in \(CodeEditors.name(for: editorBundleID))")
         }
-        switch await Repo.load(url) {
-        case .text(let text): return .text(CodeText.plain(text, size: codeSize, theme: theme))
-        case .message(let message): return .message(message)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    private var diskChangedBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            Text("This file changed on disk while you were editing it.")
+                .font(.callout)
+            Spacer()
+            Button("Load Disk Version") { buffers.acceptDiskVersion(cardID) }
+                .help("Discard your edits and show the version on disk")
+            Button("Keep Mine") { buffers.keepMine(cardID) }
+                .help("Keep your edits; saving replaces the version on disk")
+        }
+        .padding(8)
+        .background(Color.yellow.opacity(0.12))
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if showsDiff {
+            VStack(spacing: 0) {
+                if isDirty {
+                    Text("The diff shows the file on disk. Your unsaved edits aren't included.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+                }
+                if let diff {
+                    ReadOnlyText(text: diff)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        } else if let buffer {
+            CodeEditorView(
+                text: buffer.text,
+                font: NSFont.monospacedSystemFont(ofSize: codeSize, weight: .regular),
+                color: theme.codeTextColor,
+                onChange: { buffers.update(cardID, text: $0) }
+            )
+        } else if let message = buffers.messages[cardID] {
+            Text(message)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func save(overwrite: Bool) {
+        do {
+            if try !buffers.save(cardID, to: url, overwrite: overwrite) {
+                confirmOverwrite = true
+            }
+        } catch {
+            saveError = error.localizedDescription
         }
     }
 }

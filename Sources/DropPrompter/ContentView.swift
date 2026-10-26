@@ -6,6 +6,7 @@ import Translation
 struct ContentView: View {
     @ObservedObject var settings: Settings
     @ObservedObject var terminals: TerminalSessions
+    @ObservedObject var buffers: FileBuffers
     let onClose: () -> Void
 
     @State private var translation = ""
@@ -131,12 +132,14 @@ struct ContentView: View {
         case .file:
             if let path = card.filePath {
                 FileViewer(
+                    cardID: card.id,
                     url: URL(fileURLWithPath: path),
                     change: repoWatcher.change(forFileAt: path),
                     repoRoot: card.repoRoot.map { URL(fileURLWithPath: $0, isDirectory: true) },
                     theme: settings.theme,
                     codeSize: codeSize,
-                    editorBundleID: settings.editorBundleID
+                    editorBundleID: settings.editorBundleID,
+                    buffers: buffers
                 )
                 .id(card.id)
             }
@@ -375,6 +378,10 @@ struct ContentView: View {
                 .simultaneousGesture(TapGesture(count: 2).onEnded { startRename(card, index: index) })
                 .help(index < 9 ? "⌘\(index + 1) · double-click to rename" : "Double-click to rename")
             }
+            if buffers.isDirty(card.id) {
+                Circle().fill(Color.orange).frame(width: 6, height: 6)
+                    .help("Unsaved changes")
+            }
             if terminals.unseenOutput.contains(card.id) {
                 Circle().fill(Color.accentColor).frame(width: 6, height: 6)
                     .help("New output")
@@ -434,7 +441,15 @@ struct ContentView: View {
                 )
             }
         case .file:
-            removeCard(card.id) // a viewer holds nothing that could be lost
+            if buffers.isDirty(card.id) {
+                pendingRemoval = PendingRemoval(
+                    cardID: card.id,
+                    title: "Close without saving?",
+                    message: "Your changes to “\(card.title(fallback: "this file", terminalTitle: nil))” will be lost."
+                )
+            } else {
+                removeCard(card.id)
+            }
         case .notes:
             if card.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 removeCard(card.id)
@@ -449,7 +464,8 @@ struct ContentView: View {
     }
 
     private func removeCard(_ id: UUID) {
-        terminals.close(id) // no-op for notes cards
+        terminals.close(id) // no-op for other kinds
+        buffers.close(id)
         settings.removeCard(id)
     }
 

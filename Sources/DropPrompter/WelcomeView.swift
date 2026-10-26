@@ -26,6 +26,7 @@ struct WelcomeView: View {
             ("⌘1 … ⌘9", "Switch between cards"),
             ("⌘P", "Open a file from the terminal's git repository"),
             ("⌘B", "Show or hide the repository sidebar"),
+            ("⌘S", "Save the file in a file card"),
             ("⌘V  ⌘C  ⌘Z", "Paste, copy, undo"),
         ].map { Shortcut(keys: $0.0, action: $0.1) }
     }
@@ -37,8 +38,8 @@ struct WelcomeView: View {
         ("apple.terminal", "Terminal cards run your shell inside the panel. Their tab shows the title the running "
             + "program sets, such as Claude Code or Copilot CLI status, and a dot when there's new output."),
         ("arrow.triangle.branch", "In a git repository, a terminal card shows the branch and changes. Pin the "
-            + "sidebar (⌘B) left or right to browse changes and files, view diffs read-only, and open them in your "
-            + "editor with one click."),
+            + "sidebar (⌘B) left or right to browse changes and files. Edit files in place (⌘S saves) or view their "
+            + "diff, and open them in your editor with one click."),
         ("circle.lefthalf.filled", "The slider changes how see-through the background is."),
         ("paintpalette", "Themes: Dark, Light or Paper (a warm, yellowish tone) from the palette button or ⚙︎."),
         ("arrow.up.left.and.arrow.down.right", "Drag the bottom grip or corner to resize the panel."),

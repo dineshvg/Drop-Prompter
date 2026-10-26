@@ -62,13 +62,18 @@ work without switching to your IDE.
 - **Repository sidebar (⌘B)**, pinned on the left or right as you like, with two tabs: **Changes** (`git status`)
   and **Files** (a folder tree with a filter). It stays visible while you switch cards. Click a file to open it as
   a card; the sidebar highlights the file you're looking at.
-- **File cards** show a changed file's **diff** (green and red, read-only) or the **whole file**, and refresh by
-  themselves when the file changes on disk, so you can watch an agent edit it.
+- **File cards** are a lightweight editor: change the file and press **⌘S**. For a changed file, switch to its
+  **diff** (green and red, read-only). They reload by themselves when the file changes on disk, so you can watch an
+  agent edit it.
+- **Safe next to an agent**: unsaved edits survive switching cards and hiding the panel (an orange dot marks
+  them). If the file changes on disk while you're editing, you choose: load the disk version or keep yours. Saving
+  over a newer version asks first, and closing or quitting with unsaved edits asks too.
 - **Quick Open (⌘P)**: type part of a file name and open the file as a viewer card next to your notes.
 - **Open in your editor**: one click hands a file or the whole repository to VS Code, Android Studio, Xcode or
   your default app (choose in ⚙︎ › Code).
-- Strictly read-only: Drop Prompter never changes your files, and it runs git without taking locks, so it can't
-  get in the way of git commands running in the terminal.
+- Files change only when you save. Git is read-only and runs without taking locks, so it can't get in the way of
+  git commands running in the terminal. Binary, very large and non-UTF-8 files stay read-only, so their encoding
+  can't be damaged.
 
 ### Make it yours
 - **Themes:** Dark, Light, and Paper, a warm, yellowish tone that's easy on the eyes. Terminal cards follow
@@ -89,6 +94,7 @@ work without switching to your IDE.
 | **⌘1 … ⌘9** | Switch to card 1 … 9 |
 | **⌘P** | Open a file from the terminal card's git repository |
 | **⌘B** | Show or hide the repository sidebar (changes and files) |
+| **⌘S** | Save the file in a file card |
 | **⌘C ⌘V ⌘Z** | Copy, paste, undo |
 | Double-click a tab | Rename the card |
 
@@ -116,7 +122,8 @@ without installing it.
 - Translation uses Apple's on-device Translation framework. The only feature that sends text anywhere is the 🌐
   button, which opens Google Translate in your browser.
 - Terminal cards run your shell with your user's normal permissions, exactly like Terminal.app.
-- The repository view only reads: it runs `git status`, `git diff` and `git ls-files` locally and never writes.
+- The repository view runs `git status`, `git diff` and `git ls-files` locally and never writes with git. Files
+  are written only when you save them in a file card.
 
 ## Tips and troubleshooting
 
@@ -145,7 +152,8 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `AppDelegate.swift` | Panel, menu bar item, show/hide animation, shortcut, resizing |
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
-| `Repo.swift`, `RepoViews.swift` | Repository detection, changes, diffs, file viewer and Quick Open |
+| `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |
+| `FileBuffers.swift` | Editing, saving and conflict handling for file cards |
 | `HotKey.swift` | Global shortcut and conflict detection |
 | `Theme.swift` | Dark, Light and Paper themes |
 
