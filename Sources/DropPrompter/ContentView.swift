@@ -54,6 +54,11 @@ struct ContentView: View {
             }
             resizeBar
         }
+        .overlay {
+            if settings.showWelcome {
+                WelcomeView { settings.showWelcome = false }
+            }
+        }
         .task(id: translationRequest) {
             await scheduleTranslation(translationRequest)
         }
@@ -111,6 +116,8 @@ struct ContentView: View {
             } label: { Image(systemName: "globe") }
                 .help("Open in translate.google.com (sends the text to Google)")
 
+            Button { settings.showWelcome = true } label: { Image(systemName: "questionmark.circle") }
+                .help("Welcome and keyboard shortcuts")
             Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings) }
             Button(action: onClose) { Image(systemName: "chevron.up") }

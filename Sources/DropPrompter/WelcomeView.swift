@@ -1,0 +1,92 @@
+import SwiftUI
+
+/// Shown inside the panel the first time it opens, and again from the ? button or the menu bar icon.
+struct WelcomeView: View {
+    let onDone: () -> Void
+
+    private struct Shortcut: Identifiable {
+        let keys: String
+        let action: String
+        var id: String { keys }
+    }
+
+    private struct Tip: Identifiable {
+        let icon: String
+        let text: String
+        var id: String { text }
+    }
+
+    private let shortcuts: [Shortcut] = [
+        ("⌃Space", "Show or hide the panel, from any app"),
+        ("Esc", "Hide the panel"),
+        ("⌘T", "New card"),
+        ("⌘1 … ⌘9", "Switch between cards"),
+        ("⌘V  ⌘C  ⌘Z", "Paste, copy, undo"),
+    ].map { Shortcut(keys: $0.0, action: $0.1) }
+
+    private let tips: [Tip] = [
+        ("rectangle.stack", "Cards: keep a note per meeting or topic. + adds one, × closes it."),
+        ("character.bubble", "Translate: shows a translation next to your text, on-device with Apple Translation."),
+        ("circle.lefthalf.filled", "The slider changes how see-through the background is."),
+        ("arrow.up.left.and.arrow.down.right", "Drag the bottom grip or corner to resize the panel."),
+        ("gearshape", "Settings: launch at login, panel size, hide from screen sharing."),
+        ("square.and.arrow.down", "Everything is saved automatically, also across restarts."),
+    ].map { Tip(icon: $0.0, text: $0.1) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Welcome to Drop Prompter")
+                        .font(.title2.bold())
+                    Text("A see-through notes panel that drops down from the top of your screen. "
+                        + "Paste your talking points before a meeting and glance at them while you speak, "
+                        + "optionally with a live translation next to them.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Keyboard shortcuts").font(.headline)
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                        ForEach(shortcuts) { shortcut in
+                            GridRow {
+                                Text(shortcut.keys)
+                                    .font(.system(.body, design: .monospaced).weight(.semibold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.12)))
+                                Text(shortcut.action)
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Good to know").font(.headline)
+                    ForEach(tips) { tip in
+                        Label(tip.text, systemImage: tip.icon)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Before relying on \"Hide from screen sharing\" in a meeting, check it once with your meeting app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Text("Open this again with ? in the toolbar or from the menu bar icon.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Get Started", action: onDone)
+                        .keyboardShortcut(.defaultAction)
+                        .controlSize(.large)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 640, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .background(.ultraThickMaterial)
+    }
+}

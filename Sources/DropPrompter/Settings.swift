@@ -17,6 +17,8 @@ final class Settings: ObservableObject {
     @Published var targetLanguage: String { didSet { save(targetLanguage, "targetLanguage") } }
     @Published var showTranslation: Bool { didSet { save(showTranslation, "showTranslation") } }
     @Published var hideFromScreenShare: Bool { didSet { save(hideFromScreenShare, "hideFromScreenShare") } }
+    /// Whether the welcome screen is showing. Starts true until the user has dismissed it once.
+    @Published var showWelcome: Bool { didSet { if !showWelcome { save(true, "hasSeenWelcome") } } }
 
     static let widthRange = 0.25...1.0
     static let heightRange = 0.15...0.95
@@ -39,6 +41,7 @@ final class Settings: ObservableObject {
         targetLanguage = d.string(forKey: "targetLanguage") ?? "de"
         showTranslation = d.object(forKey: "showTranslation") as? Bool ?? false
         hideFromScreenShare = d.object(forKey: "hideFromScreenShare") as? Bool ?? true
+        showWelcome = !d.bool(forKey: "hasSeenWelcome")
     }
 
     private func save(_ value: Any, _ key: String) {

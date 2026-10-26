@@ -6,6 +6,9 @@ optionally show an on-device translation side by side.
 
 ## Features
 
+- A welcome screen explains the app and its shortcuts the first time the panel opens. Open it again with **?**
+  in the toolbar or **Welcome & Shortcuts** in the menu bar icon.
+
 - **⌃Space** toggles the panel from any app, including full-screen apps and every Space. **Esc** hides it.
 - Translucent blurred background with an opacity slider; the text itself stays fully opaque.
 - **Cards**: keep several notes side by side as tabs. **+** (⌘T) adds a card, **⌘1…⌘9** switches, **×** closes

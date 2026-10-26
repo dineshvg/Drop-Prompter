@@ -125,12 +125,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let toggleItem = menu.addItem(withTitle: "Show / Hide   ⌃Space", action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
+        let welcomeItem = menu.addItem(withTitle: "Welcome & Shortcuts", action: #selector(showWelcome), keyEquivalent: "")
+        welcomeItem.target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Drop Prompter", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
     // MARK: - Show / hide
+
+    @objc private func showWelcome() {
+        settings.showWelcome = true
+        show()
+    }
 
     @objc private func toggle() {
         isShown ? hide() : show()
