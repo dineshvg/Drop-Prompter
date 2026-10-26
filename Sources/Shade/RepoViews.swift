@@ -373,12 +373,22 @@ struct FileViewer: View {
     @ObservedObject var buffers: FileBuffers
 
     @State private var diff: NSAttributedString?
-    @State private var preferDiff = true
+    /// What the card shows when it can: the uncommitted changes, the file to edit, or rendered Markdown.
+    private enum Mode: Hashable { case changes, file, preview }
+    @State private var preferredMode = Mode.changes
     @State private var reloads = 0
     @State private var confirmOverwrite = false
     @State private var saveError: String?
 
-    private var showsDiff: Bool { preferDiff && change != nil && repoRoot != nil }
+    private var canShowDiff: Bool { change != nil && repoRoot != nil }
+    private var isMarkdown: Bool { (languageOverride ?? detectedLanguage) == "markdown" }
+    /// Changes while there are some to show; Markdown files otherwise open rendered.
+    private var mode: Mode {
+        if preferredMode == .changes && canShowDiff { return .changes }
+        if preferredMode == .file || !isMarkdown { return .file }
+        return .preview
+    }
+    private var showsDiff: Bool { mode == .changes }
     private var buffer: FileBuffers.Buffer? { buffers.buffers[cardID] }
     private var isDirty: Bool { buffer?.isDirty == true }
 
@@ -462,16 +472,17 @@ struct FileViewer: View {
                     .foregroundStyle(.orange)
             }
             Spacer()
-            if change != nil, repoRoot != nil {
-                Picker("View", selection: $preferDiff) {
-                    Text("Changes").tag(true)
-                    Text("File").tag(false)
+            if canShowDiff || isMarkdown {
+                Picker("View", selection: Binding(get: { mode }, set: { preferredMode = $0 })) {
+                    if canShowDiff { Text("Changes").tag(Mode.changes) }
+                    Text("File").tag(Mode.file)
+                    if isMarkdown { Text("Preview").tag(Mode.preview) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
             }
-            if !showsDiff, buffer != nil, highlightingEnabled {
+            if mode == .file, buffer != nil, highlightingEnabled {
                 languageMenu
             }
             if !showsDiff, buffer != nil {
@@ -548,6 +559,15 @@ struct FileViewer: View {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+        } else if let buffer, mode == .preview {
+            MarkdownPreview(
+                markdown: buffer.text,
+                baseURL: url.deletingLastPathComponent(),
+                theme: theme,
+                highlightTheme: highlightTheme,
+                fontSize: max(13, codeSize + 2)
+            )
+            .background(Color(nsColor: theme.terminalBackground).opacity(codeBackgroundOpacity))
         } else if let buffer {
             CodeEditorView(
                 text: buffer.text,

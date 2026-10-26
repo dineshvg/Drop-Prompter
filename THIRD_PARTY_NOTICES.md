@@ -36,6 +36,11 @@ THE SOFTWARE.
 [highlight.js](https://highlightjs.org) 11.11.1, BSD 3-Clause License; see
 `Resources/Highlighting/LICENSE-highlight.js.txt`.
 
+## marked
+
+`Resources/Markdown/marked.min.js` comes from [marked](https://marked.js.org) 15.0.12, MIT License, Copyright (c)
+2018+ MarkedJS and 2011-2018 Christopher Jeffrey; see `Resources/Markdown/LICENSE-marked.md`.
+
 ## SwiftTerm
 
 Terminal cards use [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT License), included as a Swift

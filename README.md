@@ -137,6 +137,10 @@ work without switching to your IDE.
   Each Shade theme has its own highlighting theme; 16 come built in, including Android Studio, IntelliJ Light,
   Xcode, GitHub and Atom One. **Get More Themes** in ⚙︎ downloads any of the other highlight.js themes, much
   like installing a color scheme in Sublime Text, and you can add your own languages too.
+- **Markdown preview**: `.md` files open rendered, like on GitHub: headings, lists, task lists, tables, quotes and
+  code blocks in your highlighting theme. Switch to **File** to edit; the preview follows unsaved edits and changes
+  on disk. It's safe for files you didn't write: nothing in them runs as a script, and nothing is loaded from the
+  network (images from the web stay hidden; local ones show). Web links open in your browser.
 - **Quick Open (⌘P)**: type part of a file name and open the file as a viewer card next to your notes.
 - **Open in your editor**: one click hands a file or the whole repository to VS Code, Android Studio, Xcode or
   your default app (choose in ⚙︎ › Code).
@@ -315,6 +319,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `AgentTraffic.swift`, `TrafficView.swift` | The relay and proxy that record model API calls and connections, and the Agent Traffic card |
 | `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |
 | `FileBuffers.swift` | Editing, saving and conflict handling for file cards |
+| `MarkdownPreview.swift` | Renders Markdown files for the preview in file cards |
 | `SyntaxHighlighting.swift`, `Highlightr/` | Syntax highlighting (highlight.js via an adapted Highlightr), themes and downloads |
 | `HotKey.swift` | Global shortcut and conflict detection |
 | `Theme.swift` | Dark, Light and Paper themes |
