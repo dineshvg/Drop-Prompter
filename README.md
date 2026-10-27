@@ -181,6 +181,7 @@ work without switching to your IDE.
 | **⌘S** | Save the file in a file card |
 | **⌘C ⌘V ⌘Z** | Copy, paste, undo |
 | Double-click a tab | Rename the card |
+| 🔴 🟡 🟢 (top left) | Hide the panel · roll it up to the toolbar · fill the screen or restore |
 
 ## Install
 
@@ -292,6 +293,14 @@ Shade can't see it. Most command-line tools follow it; some need their own proxy
 **Shade stops responding.** Force-quit it from the Apple menu › **Force Quit** (⌥⌘⎋) or by right-clicking its Dock
 icon with ⌥ held. This needs ⚙︎ › **Show in Dock**, which is on by default.
 
+**The build fails after `git pull`** with an error about SwiftTerm, such as *"Traits [PortableGraphics] have been
+enabled on package 'swiftterm'"*. The build folder still holds the previous SwiftTerm version. Run
+`swift package reset && ./scripts/install.sh`.
+
+**Hints in a terminal card are hard to read.** Shade raises any text color that's too close to its background, but
+a tool that picks colors for the wrong brightness still looks off. Tell it the theme, for example `/theme` in
+Copilot CLI.
+
 **Terminal cards after a restart.** The cards come back, each with a fresh shell; running programs don't survive
 quitting the app.
 
@@ -321,6 +330,7 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 |---|---|
 | `AppDelegate.swift` | Panel, menu bar item, show/hide animation, shortcut, resizing |
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
+| `WindowButtons.swift` | The close, roll-up and maximize buttons |
 | `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
 | `Sandbox.swift` | Sandbox profiles for sandboxed terminal cards |
 | `AgentTraffic.swift`, `TrafficView.swift` | The relay and proxy that record model API calls and connections, and the Agent Traffic card |
