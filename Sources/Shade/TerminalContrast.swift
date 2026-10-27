@@ -2,9 +2,9 @@ import AppKit
 
 /// Keeps text readable on the card's background, like iTerm2's "Minimum contrast". Tools such as Copilot CLI
 /// draw hints in dim text or in fixed 256-color and RGB greys, which can end up almost the color of the
-/// background, all the more on a see-through panel. This resolves every text color in the program's output,
-/// draws dim text itself, and replaces colors that are too close to the background. Text on a background
-/// the program chose itself is left as it is.
+/// background, all the more on a see-through panel. This resolves every text and background color in the
+/// program's output, draws dim text itself, and replaces text colors that are too close to the background
+/// behind them, the card's or one the program chose.
 struct TerminalContrast {
     typealias RGB = (r: Double, g: Double, b: Double)
 
@@ -21,7 +21,7 @@ struct TerminalContrast {
 
     // SGR state of the output so far.
     private var foregroundColor: Attribute = .standard
-    private var hasOwnBackground = false
+    private var backgroundColor: Attribute = .standard
     private var isInverse = false
     private var isBold = false
     private var isDim = false
@@ -102,7 +102,7 @@ struct TerminalContrast {
             switch parameter {
             case 0:
                 foregroundColor = .standard
-                hasOwnBackground = false
+                backgroundColor = .standard
                 isInverse = false
                 isBold = false
                 isDim = false
@@ -116,22 +116,21 @@ struct TerminalContrast {
             case 30...37: foregroundColor = .palette(parameter - 30)
             case 90...97: foregroundColor = .palette(parameter - 90 + 8)
             case 39: foregroundColor = .standard
-            case 40...47, 100...107: hasOwnBackground = true
-            case 49: hasOwnBackground = false
+            case 40...47: backgroundColor = .palette(parameter - 40)
+            case 100...107: backgroundColor = .palette(parameter - 100 + 8)
+            case 49: backgroundColor = .standard
             case 38, 48:
                 let (color, used) = Self.extendedColor(parameters, at: index + 1)
                 index += used
-                if parameter == 38 {
-                    if let color { foregroundColor = color }
-                } else {
-                    hasOwnBackground = true
+                if let color {
+                    if parameter == 38 { foregroundColor = color } else { backgroundColor = color }
                 }
             default: break
             }
             index += 1
         }
 
-        guard !hasOwnBackground, !isInverse, let color = readableColor() else {
+        guard !isInverse, let color = readableColor() else {
             guard overriding else { return [] }
             // Hand the program's own color and dimming back to the terminal.
             overriding = false
@@ -145,10 +144,11 @@ struct TerminalContrast {
 
     /// The text color to draw instead of the program's, or nil when the program's is fine as it is.
     private func readableColor() -> RGB? {
+        let behind = resolved(backgroundColor) ?? background
         var color: RGB
         switch foregroundColor {
         case .standard:
-            guard isDim else { return nil }
+            guard isDim || backgroundColor != .standard else { return nil }
             color = foreground
         case .palette(let index):
             // Like the terminal, bold makes the first eight colors bright.
@@ -159,26 +159,39 @@ struct TerminalContrast {
             color = (r, g, b)
         }
         let original = color
-        if isDim { color = Self.mix(color, background, Self.dimAmount) }
-        color = withContrast(color, isDim ? Self.minimumDimRatio : Self.minimumRatio)
-        if !isDim, color == original, case .palette = foregroundColor { return nil }
+        if isDim { color = Self.mix(color, behind, Self.dimAmount) }
+        color = withContrast(color, against: behind, isDim ? Self.minimumDimRatio : Self.minimumRatio)
+        if !isDim, color == original { return nil }
         return color
     }
 
-    /// `color` blended towards the card's foreground just enough to reach `minimum` contrast.
-    private func withContrast(_ color: RGB, _ minimum: Double) -> RGB {
-        let backgroundLuminance = Self.luminance(background)
-        guard Self.ratio(Self.luminance(color), backgroundLuminance) < minimum else { return color }
+    /// The color an attribute stands for; nil for the terminal's own.
+    private func resolved(_ attribute: Attribute) -> RGB? {
+        switch attribute {
+        case .standard: return nil
+        case .palette(let index): return index < palette.count ? palette[index] : nil
+        case .rgb(let r, let g, let b): return (r, g, b)
+        }
+    }
+
+    /// `color` blended just enough to reach `minimum` contrast against `behind`: towards the card's text color,
+    /// or towards white or black when the program's own background is too close to the card's text color.
+    private func withContrast(_ color: RGB, against behind: RGB, _ minimum: Double) -> RGB {
+        let backgroundLuminance = Self.luminance(behind)
+        func contrast(_ c: RGB) -> Double { Self.ratio(Self.luminance(c), backgroundLuminance) }
+        guard contrast(color) < minimum else { return color }
+        let candidates: [RGB] = [foreground, (1, 1, 1), (0, 0, 0)]
+        let target = candidates.first { contrast($0) >= minimum } ?? candidates.max { contrast($0) < contrast($1) }!
         var low = 0.0, high = 1.0
         for _ in 0..<12 {
             let middle = (low + high) / 2
-            if Self.ratio(Self.luminance(Self.mix(color, foreground, middle)), backgroundLuminance) < minimum {
+            if contrast(Self.mix(color, target, middle)) < minimum {
                 low = middle
             } else {
                 high = middle
             }
         }
-        return Self.mix(color, foreground, high)
+        return Self.mix(color, target, high)
     }
 
     private func sgr(for attribute: Attribute) -> String {
