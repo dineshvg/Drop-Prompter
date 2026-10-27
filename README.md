@@ -39,6 +39,9 @@ the project you give it.
 
 ### Notes that drop down
 - **⌃Space** (configurable) shows and hides the panel from any app; **Esc** hides it too.
+- **Window buttons** at the top left, like any Mac window: **red** hides the panel (your cards and terminals keep
+  running), **yellow** rolls it up to just the toolbar and card tabs, like a window shade, and **green** fills the
+  screen below the menu bar or restores your size. Click a card or press ⌃Space to roll it down again.
 - **Cards** keep separate notes as tabs, for example one per meeting, talk or topic. **⌘T** adds one,
   **⌘1…⌘9** switches. Double-click a tab to rename it; otherwise it shows the card's first line.
 - **Groups**, like Chrome's tab groups: right-click a card › *Add to New Group*. Each group gets its own color
