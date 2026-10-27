@@ -174,6 +174,15 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         view.nativeForegroundColor = theme.terminalForeground
         view.nativeBackgroundColor = theme.terminalBackground
         view.backgroundOpacity = CGFloat(backgroundOpacity)
+        // Like iTerm2's "Minimum contrast": text too close to its background, such as the fixed greys Copilot CLI
+        // picks for the other brightness, is lightened or darkened as it's drawn, so it also follows theme changes.
+        // 4.5 is WCAG AA; a see-through panel shows a background less solid than the theme's, so it asks a bit more.
+        view.minimumContrastRatio = CGFloat(4.5 + 2 * (1 - backgroundOpacity))
+        view.installColors(theme.terminalPalette.map { rgb in
+            SwiftTerm.Color(red: UInt16((rgb >> 16) & 0xff) * 257,
+                            green: UInt16((rgb >> 8) & 0xff) * 257,
+                            blue: UInt16(rgb & 0xff) * 257)
+        })
     }
 
     func close() {
@@ -186,6 +195,8 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         let shell = environment["SHELL"] ?? "/bin/zsh"
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
+        // Lets tools that check it pick dark or light colors to match the card.
+        environment["COLORFGBG"] = owner?.theme.colorFGBG ?? Theme.dark.colorFGBG
         environment["LANG"] = environment["LANG"] ?? "en_US.UTF-8"
         startedAt = Date()
 

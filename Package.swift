@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS("15.0")], // Translation framework
     dependencies: [
         // Terminal emulator for the built-in terminal pane (MIT).
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.20.0"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.99.1"),
     ],
     targets: [
         .executableTarget(
