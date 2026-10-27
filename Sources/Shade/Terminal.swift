@@ -2,12 +2,14 @@ import AppKit
 import SwiftTerm
 import SwiftUI
 
-/// A terminal view that reports output, so cards in the background can show an activity dot.
+/// A terminal view that reports output, so cards in the background can show an activity dot, and keeps
+/// low-contrast text readable.
 final class ActivityTerminalView: LocalProcessTerminalView {
     var onOutput: () -> Void = {}
+    var contrast = TerminalContrast(background: Theme.dark.terminalBackground, foreground: Theme.dark.terminalForeground)
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
-        super.dataReceived(slice: slice)
+        super.dataReceived(slice: ArraySlice(contrast.filter(slice)))
         onOutput()
     }
 }
@@ -174,6 +176,8 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         view.nativeForegroundColor = theme.terminalForeground
         view.nativeBackgroundColor = theme.terminalBackground
         view.backgroundOpacity = CGFloat(backgroundOpacity)
+        // Applies to output from now on; text already on screen keeps its colors.
+        view.contrast.setColors(background: theme.terminalBackground, foreground: theme.terminalForeground)
         view.installColors(theme.terminalPalette.map { rgb in
             SwiftTerm.Color(red: UInt16((rgb >> 16) & 0xff) * 257,
                             green: UInt16((rgb >> 8) & 0xff) * 257,
