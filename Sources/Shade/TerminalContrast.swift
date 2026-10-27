@@ -15,7 +15,10 @@ struct TerminalContrast {
     /// How far dim text is blended towards the background before the minimum applies.
     static let dimAmount = 0.4
 
+    /// The background as seen through the panel.
     private var background: RGB = (0, 0, 0)
+    /// The theme's own, solid background, which the terminal reports to programs that ask.
+    private var cardBackground: RGB = (0, 0, 0)
     private var foreground: RGB = (1, 1, 1)
     private var palette: [RGB] = []
 
@@ -44,7 +47,8 @@ struct TerminalContrast {
     /// mixed with whatever is behind it. A mid grey stands in for that.
     mutating func setColors(theme: Theme, backgroundOpacity: Double) {
         let opacity = min(max(backgroundOpacity, 0), 1)
-        background = Self.mix(Self.rgb(theme.terminalBackground), (0.5, 0.5, 0.5), 1 - opacity)
+        cardBackground = Self.rgb(theme.terminalBackground)
+        background = Self.mix(cardBackground, (0.5, 0.5, 0.5), 1 - opacity)
         foreground = Self.rgb(theme.terminalForeground)
         palette = theme.terminalPalette.map { value -> RGB in
             (Double((value >> 16) & 0xff) / 255, Double((value >> 8) & 0xff) / 255, Double(value & 0xff) / 255)
@@ -144,7 +148,7 @@ struct TerminalContrast {
 
     /// The text color to draw instead of the program's, or nil when the program's is fine as it is.
     private func readableColor() -> RGB? {
-        let behind = resolved(backgroundColor) ?? background
+        let behind = backgrounds()
         var color: RGB
         switch foregroundColor {
         case .standard:
@@ -159,10 +163,19 @@ struct TerminalContrast {
             color = (r, g, b)
         }
         let original = color
-        if isDim { color = Self.mix(color, behind, Self.dimAmount) }
+        if isDim { color = Self.mix(color, behind[0], Self.dimAmount) }
         color = withContrast(color, against: behind, isDim ? Self.minimumDimRatio : Self.minimumRatio)
         if !isDim, color == original { return nil }
         return color
+    }
+
+    /// What the text must be readable on, the one it's drawn on first. Programs such as Copilot CLI paint
+    /// their own background in the color the terminal reported, but the panel shows through it, so that
+    /// background counts as both: solid and seen through the panel.
+    private func backgrounds() -> [RGB] {
+        guard let own = resolved(backgroundColor) else { return [background] }
+        let isCardColor = Self.ratio(Self.luminance(own), Self.luminance(cardBackground)) < 1.25
+        return isCardColor ? [background, own] : [own]
     }
 
     /// The color an attribute stands for; nil for the terminal's own.
@@ -174,11 +187,15 @@ struct TerminalContrast {
         }
     }
 
-    /// `color` blended just enough to reach `minimum` contrast against `behind`: towards the card's text color,
-    /// or towards white or black when the program's own background is too close to the card's text color.
-    private func withContrast(_ color: RGB, against behind: RGB, _ minimum: Double) -> RGB {
-        let backgroundLuminance = Self.luminance(behind)
-        func contrast(_ c: RGB) -> Double { Self.ratio(Self.luminance(c), backgroundLuminance) }
+    /// `color` blended just enough to reach `minimum` contrast against every background in `behind`: towards
+    /// the card's text color, or towards white or black when the program's own background is too close to
+    /// the card's text color.
+    private func withContrast(_ color: RGB, against behind: [RGB], _ minimum: Double) -> RGB {
+        let luminances = behind.map(Self.luminance)
+        func contrast(_ c: RGB) -> Double {
+            let luminance = Self.luminance(c)
+            return luminances.map { Self.ratio(luminance, $0) }.min() ?? 21
+        }
         guard contrast(color) < minimum else { return color }
         let candidates: [RGB] = [foreground, (1, 1, 1), (0, 0, 0)]
         let target = candidates.first { contrast($0) >= minimum } ?? candidates.max { contrast($0) < contrast($1) }!
