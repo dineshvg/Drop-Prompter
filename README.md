@@ -62,9 +62,8 @@ the project you give it.
 - **⇧⌘T** opens a terminal card with your own login shell, profile, aliases and tools.
 - Each theme has its own 16-color terminal palette, tuned so the dim hints of tools like Copilot CLI and Claude Code
   stay readable, and cards tell command-line tools whether they're dark or light (`COLORFGBG`).
-- **Minimum contrast**, like iTerm2's: dim text and text in a grey too close to the card's background are
-  brightened (or darkened, on Light and Paper) just enough to read, taking the panel's see-through background
-  into account.
+- **Minimum contrast**, like iTerm2's: text whose color is too close to its background, such as hints a tool
+  colored for a light terminal, is brightened or darkened just enough to read, also after you switch themes.
 - Each card has its own shell, which keeps running while the panel is hidden or you're on another card.
 - The tab shows the title the running program sets, so you can follow Claude Code or Copilot CLI progress at a
   glance. A dot tells you a background card has new output.
@@ -184,7 +183,7 @@ Shade to Applications. Release builds are signed and notarized by Apple, and run
 with macOS 15 or later.
 
 ### Build from source
-Requirements: macOS 15 or later and Xcode 16+ (or matching Command Line Tools).
+Requirements: macOS 15 or later and Xcode 26+ (Swift 6.2, or matching Command Line Tools).
 
 ```bash
 git clone https://github.com/dineshvg/Shade.git

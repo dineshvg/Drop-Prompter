@@ -2,14 +2,12 @@ import AppKit
 import SwiftTerm
 import SwiftUI
 
-/// A terminal view that reports output, so cards in the background can show an activity dot, and keeps
-/// low-contrast text readable.
+/// A terminal view that reports output, so cards in the background can show an activity dot.
 final class ActivityTerminalView: LocalProcessTerminalView {
     var onOutput: () -> Void = {}
-    var contrast = TerminalContrast(theme: .dark, backgroundOpacity: 1)
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
-        super.dataReceived(slice: ArraySlice(contrast.filter(slice)))
+        super.dataReceived(slice: slice)
         onOutput()
     }
 }
@@ -176,8 +174,10 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         view.nativeForegroundColor = theme.terminalForeground
         view.nativeBackgroundColor = theme.terminalBackground
         view.backgroundOpacity = CGFloat(backgroundOpacity)
-        // Applies to output from now on; text already on screen keeps its colors.
-        view.contrast.setColors(theme: theme, backgroundOpacity: backgroundOpacity)
+        // Like iTerm2's "Minimum contrast": text too close to its background, such as the fixed greys Copilot CLI
+        // picks for the other brightness, is lightened or darkened as it's drawn, so it also follows theme changes.
+        // 4.5 is WCAG AA; a see-through panel shows a background less solid than the theme's, so it asks a bit more.
+        view.minimumContrastRatio = CGFloat(4.5 + 2 * (1 - backgroundOpacity))
         view.installColors(theme.terminalPalette.map { rgb in
             SwiftTerm.Color(red: UInt16((rgb >> 16) & 0xff) * 257,
                             green: UInt16((rgb >> 8) & 0xff) * 257,
