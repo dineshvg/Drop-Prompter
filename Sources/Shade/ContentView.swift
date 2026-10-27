@@ -64,27 +64,36 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbar
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-            if let problem = settings.hotKeyProblem, settings.dismissedHotKeyWarning != settings.hotKeyID {
-                hotKeyBanner(problem)
+            VStack(spacing: 0) {
+                toolbar
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                if let problem = settings.hotKeyProblem, settings.dismissedHotKeyWarning != settings.hotKeyID {
+                    hotKeyBanner(problem)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 6)
+                }
+                cardStrip
                     .padding(.horizontal, 14)
                     .padding(.bottom, 6)
             }
-            cardStrip
-                .padding(.horizontal, 14)
-                .padding(.bottom, 6)
-            Divider().opacity(0.4)
-            // The sidebar sits next to the card content, so it stays put while switching cards.
-            HSplitView {
-                if settings.showSidebar && !settings.sidebarOnRight { sidebar }
-                cardContent
-                    .frame(minWidth: 300, maxWidth: .infinity)
-                if settings.showSidebar && settings.sidebarOnRight { sidebar }
+            .fixedSize(horizontal: false, vertical: true)
+            // A rolled-up panel is exactly this tall.
+            .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { settings.headerHeight = $0 }
+            if settings.isRolledUp {
+                Spacer(minLength: 0)
+            } else {
+                Divider().opacity(0.4)
+                // The sidebar sits next to the card content, so it stays put while switching cards.
+                HSplitView {
+                    if settings.showSidebar && !settings.sidebarOnRight { sidebar }
+                    cardContent
+                        .frame(minWidth: 300, maxWidth: .infinity)
+                    if settings.showSidebar && settings.sidebarOnRight { sidebar }
+                }
+                // Room for the AppKit resize grips along the bottom edge (see ResizeHandleView).
+                Color.clear.frame(height: 14)
             }
-            // Room for the AppKit resize grips along the bottom edge (see ResizeHandleView).
-            Color.clear.frame(height: 14)
         }
         .overlay {
             if let root = quickOpenRoot {
@@ -105,6 +114,7 @@ struct ContentView: View {
         }
         .onChange(of: settings.selectedCardID, initial: true) { _, id in
             terminals.visibleCardID = id
+            settings.isRolledUp = false
         }
         // Watch the repository only while something shows it: the sidebar or a file card.
         .onChange(of: watchRequest, initial: true) { _, request in
@@ -383,6 +393,21 @@ struct ContentView: View {
 
     private var toolbar: some View {
         HStack(spacing: 10) {
+            WindowButtons(
+                isRolledUp: settings.isRolledUp,
+                isMaximized: settings.isMaximized,
+                onClose: onClose,
+                onRollUp: { settings.isRolledUp.toggle() },
+                onMaximize: {
+                    if settings.isRolledUp {
+                        settings.isRolledUp = false
+                    } else {
+                        settings.isMaximized.toggle()
+                    }
+                }
+            )
+            .padding(.trailing, 6)
+
             Button { settings.fontSize = max(12, settings.fontSize - 2) } label: { Image(systemName: "textformat.size.smaller") }
                 .help("Smaller text")
             Button { settings.fontSize = min(72, settings.fontSize + 2) } label: { Image(systemName: "textformat.size.larger") }
@@ -446,8 +471,6 @@ struct ContentView: View {
                 .help("About Shade")
             Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(settings: settings, highlighting: SyntaxHighlighting.shared) }
-            Button(action: onClose) { Image(systemName: "chevron.up") }
-                .help("Hide (Esc / ⌃Space)")
         }
         .buttonStyle(.borderless)
         .controlSize(.regular)
@@ -532,7 +555,10 @@ struct ContentView: View {
                         if !focused { commitRename() }
                     }
             } else {
-                Button { settings.selectedCardID = card.id } label: {
+                Button {
+                    settings.selectedCardID = card.id
+                    settings.isRolledUp = false
+                } label: {
                     Text(card.title(fallback: "Card \(index + 1)", terminalTitle: terminals.titles[card.id]))
                         .lineLimit(1)
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)

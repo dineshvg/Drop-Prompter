@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var subscriptions = Set<AnyCancellable>()
     private var isShown = false
     private var resizeStart: (mouse: NSPoint, frame: NSRect)?
+    private var resizeHandles: [ResizeHandleView] = []
 
     private static let animationDuration = 0.18
 
@@ -68,6 +69,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 guard let self, self.isShown, let screen = self.panel.screen else { return }
                 self.panel.setFrame(self.frames(on: screen).shown, display: true)
+            }
+            .store(in: &subscriptions)
+        // The window buttons: rolled up to the toolbar, or filling the screen.
+        settings.$isRolledUp.combineLatest(settings.$isMaximized)
+            .dropFirst()
+            .removeDuplicates { $0 == $1 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateWindowState() }
+            .store(in: &subscriptions)
+        settings.$headerHeight
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.settings.isRolledUp else { return }
+                self.updateWindowState()
             }
             .store(in: &subscriptions)
 
@@ -175,7 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Resize grips sit above the SwiftUI content, along the bottom edge.
         let bottomHandle = ResizeHandleView(kind: .bottom)
         let cornerHandle = ResizeHandleView(kind: .corner)
-        for handle in [bottomHandle, cornerHandle] {
+        resizeHandles = [bottomHandle, cornerHandle]
+        for handle in resizeHandles {
             handle.onBegin = { [weak self] in self?.beginResize() }
             handle.onDrag = { [weak self] in self?.updateResize(includeWidth: $0) }
             handle.onEnd = { [weak self] in self?.endResize() }
@@ -264,7 +281,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggle() {
-        isShown ? hide() : show()
+        if isShown && settings.isRolledUp {
+            settings.isRolledUp = false
+        } else {
+            isShown ? hide() : show()
+        }
+    }
+
+    /// Animates the panel to the size the window buttons ask for. A rolled-up panel can't be resized.
+    private func updateWindowState() {
+        resizeHandles.forEach { $0.isHidden = settings.isRolledUp }
+        guard isShown, let screen = panel.screen else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.animationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frames(on: screen).shown, display: true)
+        }
     }
 
     private func show() {
@@ -294,6 +326,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // The hotkey may have been pressed again mid-animation.
                 guard let self, !self.isShown else { return }
                 self.panel.orderOut(nil)
+                // Next time it comes down in full.
+                self.settings.isRolledUp = false
             }
         })
     }
@@ -323,15 +357,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func endResize() {
         resizeStart = nil
         guard let visible = panel.screen?.visibleFrame else { return }
+        // Dragging to a size of its own ends "fill the screen".
+        settings.isMaximized = false
         settings.widthFraction = Double(panel.frame.width / visible.width)
         settings.heightFraction = Double(panel.frame.height / visible.height)
     }
 
     /// Centered horizontally, attached to the bottom of the menu bar; hidden = just above the screen.
+    /// Maximized, it fills the screen below the menu bar; rolled up, only the toolbar and card tabs show.
     private func frames(on screen: NSScreen) -> (shown: NSRect, hidden: NSRect) {
         let visible = screen.visibleFrame
-        let width = (visible.width * settings.widthFraction).rounded()
-        let height = (visible.height * settings.heightFraction).rounded()
+        let width = settings.isMaximized ? visible.width : (visible.width * settings.widthFraction).rounded()
+        let fullHeight = settings.isMaximized ? visible.height : (visible.height * settings.heightFraction).rounded()
+        let height = settings.isRolledUp ? min(fullHeight, CGFloat(settings.headerHeight).rounded(.up) + 4) : fullHeight
         let x = (visible.midX - width / 2).rounded()
         return (
             NSRect(x: x, y: visible.maxY - height, width: width, height: height),

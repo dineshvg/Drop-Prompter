@@ -67,6 +67,13 @@ final class Settings: ObservableObject {
     /// Whether the welcome screen is showing. Starts true until the user has dismissed it once.
     @Published var showWelcome: Bool { didSet { if !showWelcome { save(true, "hasSeenWelcome") } } }
 
+    /// Rolled up to just the toolbar and card tabs (the yellow window button). Not saved.
+    @Published var isRolledUp = false
+    /// Filling the screen below the menu bar (the green window button). Not saved.
+    @Published var isMaximized = false
+    /// Height of the toolbar and card tabs, which is all a rolled-up panel shows.
+    @Published var headerHeight: Double = 80
+
     static let widthRange = 0.25...1.0
     static let heightRange = 0.15...0.95
 
