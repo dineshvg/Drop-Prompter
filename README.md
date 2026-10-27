@@ -52,6 +52,8 @@ the project you give it.
 - Everything is saved as you type and comes back after a restart.
 - A larger or smaller font, adjustable background opacity, and a panel you can **resize** by dragging its bottom
   edge or corner. It stays centered under the menu bar.
+- **On top or not**: by default the panel floats above every app. Turn off ⚙︎ › Panel › *Keep on top of other
+  windows* to let other windows cover it; ⌃Space then brings it back to the front.
 
 ### Live translation
 - Turn on **Translate** to see a translation next to your notes, updated as you type and kept line by line so
@@ -70,6 +72,15 @@ the project you give it.
 - Each card has its own shell, which keeps running while the panel is hidden or you're on another card.
 - The tab shows the title the running program sets, so you can follow Claude Code or Copilot CLI progress at a
   glance. A dot tells you a background card has new output.
+- **Know when an agent needs you.** When a card you aren't looking at needs input, Shade posts a macOS
+  notification and puts a 🔔 on its tab; click the notification to jump to the card. It notices:
+  - notifications programs send (OSC 9, 777 and 99). In Claude Code, set `/config` › *Notifications* to *iTerm2*
+    or *Terminal Bell* for the most precise alerts;
+  - the terminal bell;
+  - an agent (Claude Code, Copilot CLI, Codex, Gemini, Aider and others) that stops printing for 5 seconds,
+    which usually means it's asking something or done. This also covers tools that send no signal of their own.
+
+  Turn it off in ⚙︎ › Terminal. The first notification asks for permission in macOS.
 - Closing a card or quitting the app asks first and names what would be stopped, for example
   *"Close terminal while “claude” is running?"*
 
@@ -301,6 +312,11 @@ enabled on package 'swiftterm'"*. The build folder still holds the previous Swif
 a tool that picks colors for the wrong brightness still looks off. Tell it the theme, for example `/theme` in
 Copilot CLI.
 
+**No notification when an agent asks something.** Check that notifications for Shade are allowed in System
+Settings › Notifications, and that ⚙︎ › Terminal › *Notify when a terminal needs you* is on. Shade doesn't notify
+about the card you're looking at. Builds started with `swift run` can't post notifications; install the app with
+`./scripts/install.sh`.
+
 **Terminal cards after a restart.** The cards come back, each with a fresh shell; running programs don't survive
 quitting the app.
 
@@ -331,7 +347,8 @@ Issues and pull requests are welcome. The app is a small Swift package; the main
 | `AppDelegate.swift` | Panel, menu bar item, show/hide animation, shortcut, resizing |
 | `ContentView.swift` | Toolbar, cards, editor, translation, settings |
 | `WindowButtons.swift` | The close, roll-up and maximize buttons |
-| `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) |
+| `Terminal.swift` | Terminal cards (built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) and noticing when one needs you |
+| `Notifier.swift` | macOS notifications for terminal cards |
 | `Sandbox.swift` | Sandbox profiles for sandboxed terminal cards |
 | `AgentTraffic.swift`, `TrafficView.swift` | The relay and proxy that record model API calls and connections, and the Agent Traffic card |
 | `Repo.swift`, `RepoViews.swift` | Repository detection, sidebar, diffs, file cards and Quick Open |

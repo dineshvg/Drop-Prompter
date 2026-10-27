@@ -59,6 +59,10 @@ final class Settings: ObservableObject {
     @Published var hideFromScreenShare: Bool { didSet { save(hideFromScreenShare, "hideFromScreenShare") } }
     /// A Dock icon also lists Shade in Force Quit (⌥⌘⎋), which only shows apps that have one.
     @Published var showInDock: Bool { didSet { save(showInDock, "showInDock") } }
+    /// The panel floats above other apps' windows. Off, it's a normal window that others can cover.
+    @Published var keepOnTop: Bool { didSet { save(keepOnTop, "keepOnTop") } }
+    /// A notification when a terminal card needs you, for example an agent asking a question.
+    @Published var notifyWhenNeeded: Bool { didSet { save(notifyWhenNeeded, "notifyWhenNeeded") } }
     @Published var hotKeyID: String { didSet { save(hotKeyID, "hotKeyID") } }
     /// Set by the app delegate after registering the shortcut; nil when nothing is in the way.
     @Published var hotKeyProblem: String? = nil
@@ -108,6 +112,8 @@ final class Settings: ObservableObject {
         showTranslation = d.object(forKey: "showTranslation") as? Bool ?? false
         hideFromScreenShare = d.object(forKey: "hideFromScreenShare") as? Bool ?? true
         showInDock = d.object(forKey: "showInDock") as? Bool ?? true
+        keepOnTop = d.object(forKey: "keepOnTop") as? Bool ?? true
+        notifyWhenNeeded = d.object(forKey: "notifyWhenNeeded") as? Bool ?? true
         showWelcome = !d.bool(forKey: "hasSeenWelcome")
         hotKeyID = d.string(forKey: "hotKeyID") ?? HotKeyPreset.all[0].id
         dismissedHotKeyWarning = d.string(forKey: "dismissedHotKeyWarning") ?? ""

@@ -3,10 +3,11 @@ import Carbon.HIToolbox
 import Combine
 import SwiftTerm
 import SwiftUI
+import UserNotifications
 
 /// Everything here is UI work on the main thread.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let settings = Settings.shared
     private let panel = ShadePanel.make()
     private let background = NSVisualEffectView()
@@ -27,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildPanel()
         buildMainMenu()
         buildStatusItem()
+        watchTerminalsForAttention()
 
         // Esc hides the panel, except in a terminal (programs like vim need it) or while renaming a card.
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -50,6 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &subscriptions)
         settings.$hideFromScreenShare
             .sink { [weak self] in self?.panel.sharingType = $0 ? .none : .readOnly }
+            .store(in: &subscriptions)
+        settings.$keepOnTop
+            .sink { [weak self] in self?.panel.level = $0 ? .statusBar : .normal }
             .store(in: &subscriptions)
         settings.$extraAgentHosts
             .receive(on: DispatchQueue.main)
@@ -283,6 +288,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggle() {
         if isShown && settings.isRolledUp {
             settings.isRolledUp = false
+        } else if isShown && !settings.keepOnTop && !panel.isKeyWindow {
+            // Other windows may cover a panel that isn't kept on top: bring it to the front first.
+            show()
         } else {
             isShown ? hide() : show()
         }
@@ -330,6 +338,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.settings.isRolledUp = false
             }
         })
+    }
+
+    // MARK: - Attention
+
+    /// Notifies the user when a terminal card they aren't looking at needs them, for example an agent asking a
+    /// question. Clicking the notification opens that card.
+    private func watchTerminalsForAttention() {
+        let terminals = TerminalSessions.shared
+        terminals.isWatching = { [weak self] cardID in
+            guard let self else { return false }
+            return self.isShown && !self.settings.isRolledUp && self.panel.isKeyWindow
+                && self.settings.selectedCardID == cardID
+        }
+        terminals.onAttention = { [weak self] cardID, message in
+            guard let self, self.settings.notifyWhenNeeded else { return }
+            let card = self.settings.cards.first { $0.id == cardID }
+            let title = card?.title(fallback: "Terminal", terminalTitle: terminals.titles[cardID]) ?? "Terminal"
+            Notifier.post(cardID: cardID, title: title, body: message)
+        }
+        terminals.onAttentionCleared = { Notifier.remove(cardID: $0) }
+        // Bringing the panel to the front counts as looking at the card on screen.
+        NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: panel, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.settings.isRolledUp else { return }
+                terminals.lookedAt(self.settings.selectedCardID)
+            }
+        }
+        if Notifier.isAvailable { UNUserNotificationCenter.current().delegate = self }
+    }
+
+    /// Shows the panel with a card on screen.
+    private func open(cardID: UUID) {
+        guard settings.cards.contains(where: { $0.id == cardID }) else { return }
+        settings.selectedCardID = cardID
+        settings.isRolledUp = false
+        show()
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        let cardID = UUID(uuidString: response.notification.request.identifier)
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                if let cardID { self?.open(cardID: cardID) }
+            }
+        }
+        completionHandler()
+    }
+
+    /// Show the banner even while Shade is the active app; the card it's about isn't on screen.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
 
     // MARK: - Resize

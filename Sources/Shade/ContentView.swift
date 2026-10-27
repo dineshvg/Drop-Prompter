@@ -573,7 +573,11 @@ struct ContentView: View {
                 Circle().fill(Color.orange).frame(width: 6, height: 6)
                     .help("Unsaved changes")
             }
-            if terminals.unseenOutput.contains(card.id) {
+            if terminals.needsAttention.contains(card.id) {
+                Image(systemName: "bell.fill").font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .help("Needs you")
+            } else if terminals.unseenOutput.contains(card.id) {
                 Circle().fill(Color.accentColor).frame(width: 6, height: 6)
                     .help("New output")
             }
@@ -963,8 +967,19 @@ struct SettingsPopover: View {
             Section("Panel") {
                 Slider(value: $settings.widthFraction, in: Settings.widthRange) { Text("Width") }
                 Slider(value: $settings.heightFraction, in: Settings.heightRange) { Text("Height") }
+                Toggle("Keep on top of other windows", isOn: $settings.keepOnTop)
+                Text("Off, other apps' windows can cover the panel; ⌃Space brings it back to the front.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Hide from screen sharing", isOn: $settings.hideFromScreenShare)
                 Text("Best effort: some capture tools on recent macOS versions ignore this. Test it with your meeting app first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Terminal") {
+                Toggle("Notify when a terminal needs you", isOn: $settings.notifyWhenNeeded)
+                Text("When you're not looking at the card: an agent asks something or goes quiet, or a program rings the "
+                    + "bell or sends a notification. Click the notification to open the card.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

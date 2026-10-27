@@ -2,13 +2,17 @@ import AppKit
 import SwiftTerm
 import SwiftUI
 
-/// A terminal view that reports output, so cards in the background can show an activity dot.
+/// A terminal view that reports the bell, so a card can ask for attention.
 final class ActivityTerminalView: LocalProcessTerminalView {
-    var onOutput: () -> Void = {}
+    /// Runs on the main thread when the program rings the terminal bell.
+    var onBell: () -> Void = {}
 
-    override func dataReceived(slice: ArraySlice<UInt8>) {
-        super.dataReceived(slice: slice)
-        onOutput()
+    /// Called on SwiftTerm's parsing thread.
+    override nonisolated func bell(source: SwiftTerm.Terminal) {
+        super.bell(source: source)
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.onBell() }
+        }
     }
 }
 
@@ -22,10 +26,19 @@ final class TerminalSessions: ObservableObject {
     @Published private(set) var titles: [UUID: String] = [:]
     /// Terminal cards that printed output while they weren't on screen.
     @Published private(set) var unseenOutput: Set<UUID> = []
+    /// Terminal cards that need the user, for example an agent asking a question. Cleared once the card is looked at.
+    @Published private(set) var needsAttention: Set<UUID> = []
+    /// Whether the user is looking at a card right now: the panel is in front with that card on screen.
+    var isWatching: (UUID) -> Bool = { _ in false }
+    /// Tells the user a card needs them (a notification); set by the app delegate.
+    var onAttention: (_ cardID: UUID, _ message: String) -> Void = { _, _ in }
+    /// The user looked at a card that needed them.
+    var onAttentionCleared: (_ cardID: UUID) -> Void = { _ in }
     /// The card currently on screen; its output never counts as unseen.
     var visibleCardID: UUID? {
         didSet {
             guard let visibleCardID else { return }
+            lookedAt(visibleCardID)
             unseenOutput.remove(visibleCardID)
             if sessions[visibleCardID] != nil { refreshRepo(of: visibleCardID, after: 0) }
         }
@@ -35,6 +48,8 @@ final class TerminalSessions: ObservableObject {
     @Published private(set) var repos: [UUID: RepoStatus] = [:]
 
     private var sessions: [UUID: TerminalSession] = [:]
+    private var lastOutput: [UUID: Date] = [:]
+    private var quietChecks: [UUID: Task<Void, Never>] = [:]
     /// Relay that records model API calls of cards with Record Agent Traffic.
     let agentTraffic = AgentTraffic.shared
     private var repoRefreshes: [UUID: Task<Void, Never>] = [:]
@@ -104,6 +119,9 @@ final class TerminalSessions: ObservableObject {
         titles[cardID] = nil
         repos[cardID] = nil
         unseenOutput.remove(cardID)
+        lookedAt(cardID)
+        lastOutput[cardID] = nil
+        quietChecks.removeValue(forKey: cardID)?.cancel()
     }
 
     /// Re-reads the shell's directory and git status. While output streams in (an agent at work), this runs
@@ -133,8 +151,89 @@ final class TerminalSessions: ObservableObject {
 
     fileprivate func outputArrived(_ cardID: UUID) {
         refreshRepo(of: cardID)
+        lastOutput[cardID] = Date()
+        if quietChecks[cardID] == nil {
+            quietChecks[cardID] = Task { [weak self] in await self?.waitForQuiet(cardID) }
+        }
         guard cardID != visibleCardID, !unseenOutput.contains(cardID) else { return }
         unseenOutput.insert(cardID)
+    }
+
+    // MARK: - Attention
+
+    /// How long an agent has to stay quiet after printing before it counts as waiting for the user.
+    static let quietDelay: TimeInterval = 5
+    /// Command-line agents, by process name. Agents that run on Node, Bun, Deno or Python are recognized by the
+    /// terminal title they set instead.
+    static let agentNames: Set<String> = [
+        "claude", "copilot", "codex", "gemini", "aider", "opencode", "cursor-agent", "amp", "goose", "qwen", "crush",
+    ]
+    private static let agentRuntimes: Set<String> = ["node", "bun", "deno", "python", "python3"]
+
+    /// A program asked for the user: an explicit notification or the bell, or an agent that went quiet.
+    /// `repeats` lets a card that already waits for the user notify again, for a new message.
+    fileprivate func attentionRequested(_ cardID: UUID, message: String, repeats: Bool = true) {
+        guard sessions[cardID] != nil, !isWatching(cardID) else { return }
+        guard repeats || !needsAttention.contains(cardID) else { return }
+        needsAttention.insert(cardID)
+        onAttention(cardID, message)
+    }
+
+    /// The user is looking at the card now, so it no longer waits for them.
+    func lookedAt(_ cardID: UUID) {
+        guard needsAttention.remove(cardID) != nil else { return }
+        onAttentionCleared(cardID)
+    }
+
+    /// Waits until the card has printed nothing for `quietDelay`; if an agent is running in it then, it's
+    /// most likely waiting for an answer.
+    private func waitForQuiet(_ cardID: UUID) async {
+        defer { quietChecks[cardID] = nil }
+        while let last = lastOutput[cardID] {
+            let remaining = last.addingTimeInterval(Self.quietDelay).timeIntervalSinceNow
+            guard remaining > 0 else { break }
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            if Task.isCancelled { return }
+        }
+        guard let agent = runningAgent(in: cardID) else { return }
+        attentionRequested(cardID, message: "\(agent) is waiting for you.", repeats: false)
+    }
+
+    /// The agent running in the foreground of a card, by name, or nil when it's something else.
+    private func runningAgent(in cardID: UUID) -> String? {
+        guard let program = runningProgram(in: cardID)?.lowercased() else { return nil }
+        if Self.agentNames.contains(program) { return program.prefix(1).uppercased() + program.dropFirst() }
+        guard Self.agentRuntimes.contains(program), let title = titles[cardID]?.lowercased() else { return nil }
+        return Self.agentNames.first { title.contains($0) }.map { $0.prefix(1).uppercased() + $0.dropFirst() }
+    }
+}
+
+/// Reads the desktop notifications programs send with escape codes: OSC 9 (iTerm2), OSC 777 (rxvt, Ghostty)
+/// and OSC 99 (kitty). Claude Code sends OSC 9 with its iTerm2 notification setting.
+enum TerminalNotification {
+    /// The message to show, or nil for OSC sequences that aren't notifications.
+    static func message(code: Int, payload: [UInt8]) -> String? {
+        let text = String(decoding: payload, as: UTF8.self)
+        let message: String
+        switch code {
+        case 9:
+            // OSC 9;4 is a progress bar and other OSC 9;<number> are ConEmu commands, not notifications.
+            if let first = text.split(separator: ";", maxSplits: 1).first, Int(first) != nil { return nil }
+            message = text
+        case 777:
+            // notify;<title>;<body>
+            let parts = text.split(separator: ";", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+            guard parts.first == "notify", parts.count >= 2 else { return nil }
+            message = parts.count == 3 && !parts[2].isEmpty ? parts[2] : parts[1]
+        case 99:
+            // <metadata>;<text>
+            guard let separator = text.firstIndex(of: ";") else { return nil }
+            message = String(text[text.index(after: separator)...])
+        default:
+            return nil
+        }
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -147,6 +246,7 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
     private let recordTraffic: Bool
     private var isClosed = false
     private var startedAt = Date()
+    private var notificationObservation: TerminalOscObservation?
 
     init(cardID: UUID, owner: TerminalSessions, sandbox: SandboxConfig?, recordTraffic: Bool, initialCommand: String?) {
         self.cardID = cardID
@@ -159,9 +259,27 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         apply(owner.theme, backgroundOpacity: owner.backgroundOpacity)
         // Keep ⌥ for typing characters such as @ { } [ ] on German and other layouts.
         view.optionAsMetaKey = false
-        view.onOutput = { [weak self] in
+        // SwiftTerm parses output on a background thread and reports each batch there.
+        view.setProcessOutputHandler { [weak self] in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.owner?.outputArrived(self.cardID)
+                }
+            }
+        }
+        view.onBell = { [weak self] in
             guard let self else { return }
-            self.owner?.outputArrived(self.cardID)
+            self.owner?.attentionRequested(self.cardID, message: "Rang the bell.")
+        }
+        notificationObservation = view.observeOscEvents { [weak self] event in
+            guard let message = TerminalNotification.message(code: event.code, payload: event.payload) else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.owner?.attentionRequested(self.cardID, message: message)
+                }
+            }
         }
         startShell()
         if let initialCommand {
