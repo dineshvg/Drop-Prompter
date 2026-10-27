@@ -174,6 +174,11 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         view.nativeForegroundColor = theme.terminalForeground
         view.nativeBackgroundColor = theme.terminalBackground
         view.backgroundOpacity = CGFloat(backgroundOpacity)
+        view.installColors(theme.terminalPalette.map { rgb in
+            SwiftTerm.Color(red: UInt16((rgb >> 16) & 0xff) * 257,
+                            green: UInt16((rgb >> 8) & 0xff) * 257,
+                            blue: UInt16(rgb & 0xff) * 257)
+        })
     }
 
     func close() {
@@ -186,6 +191,8 @@ private final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate 
         let shell = environment["SHELL"] ?? "/bin/zsh"
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
+        // Lets tools that check it pick dark or light colors to match the card.
+        environment["COLORFGBG"] = owner?.theme.colorFGBG ?? Theme.dark.colorFGBG
         environment["LANG"] = environment["LANG"] ?? "en_US.UTF-8"
         startedAt = Date()
 

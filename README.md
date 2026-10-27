@@ -60,6 +60,8 @@ the project you give it.
 
 ### Terminal cards
 - **⇧⌘T** opens a terminal card with your own login shell, profile, aliases and tools.
+- Each theme has its own 16-color terminal palette, tuned so the dim hints of tools like Copilot CLI and Claude Code
+  stay readable, and cards tell command-line tools whether they're dark or light (`COLORFGBG`).
 - Each card has its own shell, which keeps running while the panel is hidden or you're on another card.
 - The tab shows the title the running program sets, so you can follow Claude Code or Copilot CLI progress at a
   glance. A dot tells you a background card has new output.
