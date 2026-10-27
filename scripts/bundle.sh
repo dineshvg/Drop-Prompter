@@ -22,6 +22,8 @@ cp "$BIN" "$APP/Contents/MacOS/Shade"
 # highlight.js, its built-in themes and the theme catalog, read by SyntaxHighlighting.swift.
 mkdir -p "$APP/Contents/Resources"
 cp -R Resources/Highlighting "$APP/Contents/Resources/"
+# marked, which renders the Markdown preview (MarkdownPreview.swift).
+cp -R Resources/Markdown "$APP/Contents/Resources/"
 # App icon, drawn by scripts/make_icon.py.
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 

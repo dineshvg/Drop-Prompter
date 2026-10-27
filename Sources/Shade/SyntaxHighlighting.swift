@@ -87,15 +87,19 @@ final class SyntaxHighlighting: ObservableObject {
     /// readable on their own background, not on the see-through panel.
     func background(ofTheme name: String) -> NSColor? {
         if let cached = backgrounds[name] { return cached }
-        let candidates = themeDirectories.reversed().flatMap { directory in
-            [directory.appendingPathComponent(name + ".min.css"), directory.appendingPathComponent(name + ".css")]
-        }
-        guard let file = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
-              let css = try? String(contentsOf: file, encoding: .utf8)
-        else { return nil }
+        guard let css = css(ofTheme: name) else { return nil }
         let color = HighlightTheme(themeString: css).themeBackgroundColor
         backgrounds[name] = color
         return color
+    }
+
+    /// The theme's stylesheet; a downloaded copy wins over a bundled one.
+    func css(ofTheme name: String) -> String? {
+        let candidates = themeDirectories.reversed().flatMap { directory in
+            [directory.appendingPathComponent(name + ".min.css"), directory.appendingPathComponent(name + ".css")]
+        }
+        guard let file = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return nil }
+        return try? String(contentsOf: file, encoding: .utf8)
     }
 
     /// Sets the theme and code font used for highlighting. Returns false if the theme isn't installed.
